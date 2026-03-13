@@ -183,24 +183,42 @@ class BleedOut(Element):
         super().setup()
 
 if __name__ == "__main__":
+    """Run BleedOut standalone: flow_start -> bleed_out. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
 
-    p = om.Problem()
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 14.696, units='psi')
+    ivc.add_output('T', 518.67, units='degR')
+    ivc.add_output('W', 60.0, units='lbm/s')
+    ivc.add_output('MN', 0.25)
+    ivc.add_output('test1_frac_W', 0.05)
+    ivc.add_output('test2_frac_W', 0.05)
 
-    des_vars = p.model.add_subsystem('des_vars', om.IndepVarComp(), promotes=['*'])
-    des_vars.add_output('Fl_I:stat:W', 60.0, units='lbm/s')
-    des_vars.add_output('test1:frac_W', 0.05, units=None)
-    des_vars.add_output('test2:frac_W', 0.05, units=None)
-    des_vars.add_output('Fl_I:tot:T', 518.67, units='degR')
-    des_vars.add_output('Fl_I:tot:P', 14.696, units='psi')
-    des_vars.add_output('MN', 0.25)
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('bleed', BleedOut(design=True, statics=True, bleed_names=['test1', 'test2']))
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'bleed.Fl_I')
 
-    p.model.add_subsystem('bleed', BleedOut(design=True, statics=True, bleed_names=['test1','test2']), promotes=['*'])
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('MN', 'cycle.bleed.MN')
+    model.connect('test1_frac_W', 'cycle.bleed.test1:frac_W')
+    model.connect('test2_frac_W', 'cycle.bleed.test2:frac_W')
 
-    p.setup(check=False)
-    p.run_model()
+    prob.setup(check=False)
+    prob.run_model()
 
-    print('W',p['Fl_I:stat:W'],p['Fl_O:stat:W'],p['test1:stat:W'],p['test2:stat:W'])
-    print('T',p['Fl_I:tot:T'],p['Fl_O:tot:T'],p['test1:tot:T'],p['test2:tot:T'])
-    print('P',p['Fl_I:tot:P'],p['Fl_O:tot:P'],p['test1:tot:P'],p['test2:tot:P'])
-    # p.check_partials()
+    print("--- BleedOut standalone test ---")
+    print("W in/out:", prob.get_val('cycle.bleed.Fl_I:stat:W')[0], prob.get_val('cycle.bleed.Fl_O:stat:W')[0])
+    print("test1:stat:W =", prob.get_val('cycle.bleed.test1:stat:W')[0])
+    print("test2:stat:W =", prob.get_val('cycle.bleed.test2:stat:W')[0])
 

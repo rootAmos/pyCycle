@@ -103,3 +103,24 @@ class USatm1976Comp(ExplicitComponent):
         partials['Ps', 'alt'] = P_interp_deriv(inputs['alt']).reshape(1,)[0]
         partials['rhos', 'alt'] = rho_interp_deriv(inputs['alt']).reshape(1,)[0]
         partials['drhos_dalt', 'alt'] = drho_dh_interp_deriv(inputs['alt']).reshape(1,)[0]
+
+
+if __name__ == "__main__":
+    """Run USatm1976Comp standalone. IVC sets alt; print Ts, Ps, rhos."""
+    from openmdao.api import Problem, IndepVarComp
+
+    prob = Problem()
+    ivc = prob.model.add_subsystem('ivc', IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('alt', 10000.0, units='ft')
+
+    prob.model.add_subsystem('atm', USatm1976Comp())
+    prob.model.connect('alt', 'atm.alt')
+
+    prob.setup()
+    prob.run_model()
+
+    print("--- US1976 standalone test ---")
+    print("alt (ft) =", prob.get_val('alt')[0])
+    print("Ts (degR) =", prob.get_val('atm.Ts')[0])
+    print("Ps (psi) =", prob.get_val('atm.Ps')[0])
+    print("rhos (slug/ft**3) =", prob.get_val('atm.rhos')[0])

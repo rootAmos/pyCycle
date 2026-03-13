@@ -162,20 +162,41 @@ class Combustor(Element):
 
 
 if __name__ == "__main__":
+    """Run Combustor standalone: flow_start -> combustor. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
 
-    p = om.Problem()
-    p.model = om.Group()
-    p.model.add_subsystem('comp', MixFuel(), promotes=['*'])
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 100.0, units='psi')
+    ivc.add_output('T', 1000.0, units='degR')
+    ivc.add_output('W', 100.0, units='lbm/s')
+    ivc.add_output('MN', 0.2)
+    ivc.add_output('FAR', 0.02)
+    ivc.add_output('dPqP', 0.03)
+    ivc.add_output('comb_MN', 0.2)
 
-    p.model.add_subsystem('d1', om.IndepVarComp('Fl_I:stat:W', val=1.0, units='lbm/s', desc='weight flow'),
-                          promotes=['*'])
-    p.model.add_subsystem('d2', om.IndepVarComp('Fl_I:FAR', val=0.2, desc='Fuel to air ratio'), promotes=['*'])
-    p.model.add_subsystem('d3', om.IndepVarComp('Fl_I:tot:h', val=1.0, units='Btu/lbm', desc='total enthalpy'),
-                          promotes=['*'])
-    p.model.add_subsystem('d4', om.IndepVarComp('fuel_Tt', val=518.0, units='degR', desc='fuel temperature'),
-                          promotes=['*'])
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('combustor', Combustor(fuel_type="Jet-A(g)"))
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'combustor.Fl_I')
 
-    p.setup(check=False, force_alloc_complex=True)
-    p.run_model()
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('FAR', 'cycle.combustor.Fl_I:FAR')
+    model.connect('dPqP', 'cycle.combustor.dPqP')
+    model.connect('comb_MN', 'cycle.combustor.MN')
 
-    p.check_partials(compact_print=True, method='cs')
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Combustor standalone test ---")
+    print("Fl_O: tot:T (degR) =", prob.get_val('cycle.combustor.Fl_O:tot:T')[0])
+    print("Wfuel (lbm/s) =", prob.get_val('cycle.combustor.Wfuel')[0])

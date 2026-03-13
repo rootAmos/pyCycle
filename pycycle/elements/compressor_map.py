@@ -288,6 +288,10 @@ if __name__ == "__main__":
     # exit()
 
     p1.run_model()
+    print("--- CompressorMap standalone test ---")
+    print("PR =", p1.get_val('PR')[0])
+    print("eff =", p1.get_val('eff')[0])
+    print("Wc (lbm/s) =", p1.get_val('Wc')[0])
     p1.check_partials()
 
     # print('s_PRdes: ', p1['s_PRdes'])

@@ -181,8 +181,10 @@ if __name__ == "__main__":
     # Target PR: 1.7373664799999999
 
     p.setup(check=True)
-    print(p['Wp'], p['Wp'])
     p.run_model()
+    print("--- TurbineMap standalone test ---")
+    print("Wp =", p['Wp'][0])
+    print("PR =", p['PR'][0])
     p.check_partials(compact_print=False)
     # these should match
     print(p['Wp'], p['Wp'])

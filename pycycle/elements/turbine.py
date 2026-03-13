@@ -635,3 +635,47 @@ class Turbine(Element):
         thermo_method = self.options['thermo_method']
 
         super().setup()
+
+
+if __name__ == "__main__":
+    """Run Turbine standalone: flow_start -> turbine. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
+
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('W', 100.0, units='lbm/s')
+    ivc.add_output('MN', 0.0)
+    ivc.add_output('PR', 4.0)
+    ivc.add_output('eff', 0.9)
+    ivc.add_output('Nmech', 1000.0, units='rpm')
+    ivc.add_output('turb_MN', 0.0)
+
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('turbine', Turbine(map_data=LPT2269, design=True))
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'turbine.Fl_I')
+
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('PR', 'cycle.turbine.PR')
+    model.connect('eff', 'cycle.turbine.eff')
+    model.connect('Nmech', 'cycle.turbine.Nmech')
+    model.connect('turb_MN', 'cycle.turbine.MN')
+
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Turbine standalone test ---")
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.turbine.Fl_O:tot:P')[0])
+    print("Fl_O: tot:T (degR) =", prob.get_val('cycle.turbine.Fl_O:tot:T')[0])
+    print("power (hp) =", prob.get_val('cycle.turbine.power')[0])

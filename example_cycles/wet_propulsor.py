@@ -141,6 +141,7 @@ if __name__ == "__main__":
     prob.model = mp_wet_propulsor = MPWetPropulsor()
 
     prob.setup()
+    om.n2(prob)
 
     #Define the design point
     prob.set_val('design.fan.PR', 1.2)

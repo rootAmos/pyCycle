@@ -135,13 +135,30 @@ class Shaft(ExplicitComponent):
 
 
 if __name__ == "__main__":
-    from openmdao.api import Problem,  Group
+    """Run Shaft standalone. IVC sets Nmech and trq_0, trq_1; print power balance."""
+    import openmdao.api as om
+    from openmdao.api import Problem, Group
 
-    p = Problem()
-    p.model = Group()
-    p.model.add_subsystem("shaft", Shaft(10))
+    prob = Problem()
+    model = prob.model = Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('Nmech', 1000.0, units='rpm')
+    ivc.add_output('trq_0', 500.0, units='ft*lbf')
+    ivc.add_output('trq_1', -500.0, units='ft*lbf')
+    ivc.add_output('HPX', 0.0, units='hp')
+    ivc.add_output('fracLoss', 0.0)
 
-    p.setup()
-    p.run_model()
+    model.add_subsystem('shaft', Shaft(num_ports=2))
+    model.connect('Nmech', 'shaft.Nmech')
+    model.connect('trq_0', 'shaft.trq_0')
+    model.connect('trq_1', 'shaft.trq_1')
+    model.connect('HPX', 'shaft.HPX')
+    model.connect('fracLoss', 'shaft.fracLoss')
 
-    #print(p['shaft.PortTrqs'])
+    prob.setup()
+    prob.run_model()
+
+    print("--- Shaft standalone test ---")
+    print("pwr_in (hp) =", prob.get_val('shaft.pwr_in')[0])
+    print("pwr_out (hp) =", prob.get_val('shaft.pwr_out')[0])
+    print("pwr_net (hp) =", prob.get_val('shaft.pwr_net')[0])

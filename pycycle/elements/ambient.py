@@ -35,34 +35,23 @@ class Ambient(om.Group):
 
 
 if __name__ == "__main__":
+    """Run Ambient standalone. IVC sets alt and dTs; print Ps, Ts, rhos."""
 
-    from pycycle.elements.US1976 import USatm1976Data
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('alt', 30000.0, units='ft')
+    ivc.add_output('dTs', 0.0, units='degR')
 
-    p1 = om.Problem()
-    p1.root = Ambient()
+    model.add_subsystem('ambient', Ambient())
+    model.connect('alt', 'ambient.alt')
+    model.connect('dTs', 'ambient.dTs')
 
-    var = (('alt', 30000.0),)
-    p1.root.add("idv", om.IndepVarComp(var), promotes=["*"])
+    prob.setup()
+    prob.run_model()
 
-    p1.setup()
-
-    p1.run()
-
-    # p1.check_partials()
-    # print('Ts: ', p1['Ts'])
-    # print('Ps: ', p1['Ps'])
-    # print('rhos: ', p1['rhos'])
-
-    T = USatm1976Data.T
-    P = USatm1976Data.P
-    rho = USatm1976Data.rho
-
-    for i, alt in enumerate(USatm1976Data.alt):
-        p1['alt'] = alt
-        p1.run()
-        print(10*"=")
-        print("Ts", p1['Ts'], T[i])
-        print("Ps", p1['Ps'], P[i])
-        print("rho", p1['rhos'], rho[i])
-
-    p1.model.list_states()
+    print("--- Ambient standalone test ---")
+    print("alt (ft) =", prob.get_val('alt')[0])
+    print("Ps (psi) =", prob.get_val('ambient.Ps')[0])
+    print("Ts (degR) =", prob.get_val('ambient.Ts')[0])
+    print("rhos (slug/ft**3) =", prob.get_val('ambient.rhos')[0])

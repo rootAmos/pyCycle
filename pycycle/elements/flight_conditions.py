@@ -105,41 +105,36 @@ class FlightConditions(Element):
 
 
 if __name__ == "__main__":
+    """Run FlightConditions standalone: IVC sets alt, MN, W, dTs; prints Fl_O and ambient."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea import species_data
 
-    p1 = om.Problem()
-    p1.model = om.Group()
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('alt', 10000.0, units='ft')
+    ivc.add_output('MN', 0.8)
+    ivc.add_output('W', 100.0, units='lbm/s')
+    ivc.add_output('dTs', 0.0, units='degR')
 
-    des_vars = p1.model.add_subsystem('des_vars', om.IndepVarComp())
-    des_vars.add_output('W', 0.0, units='lbm/s')
-    des_vars.add_output('alt', 1., units='ft')
-    des_vars.add_output('MN', 0.5)
-    des_vars.add_output('dTs', 0.0, units='degR')
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = species_data.janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('fc', FlightConditions())
 
+    model.connect('alt', 'cycle.fc.alt')
+    model.connect('MN', 'cycle.fc.MN')
+    model.connect('W', 'cycle.fc.W')
+    model.connect('dTs', 'cycle.fc.dTs')
 
-    fc = p1.model.add_subsystem("fc", FlightConditions(thermo_data=thermo_data.wet_air))
+    prob.setup(check=False)
+    prob.run_model()
 
-    p1.model.connect('des_vars.W', 'fc.W')
-    p1.model.connect('des_vars.alt', 'fc.alt')
-    p1.model.connect('des_vars.MN', 'fc.MN')
-    p1.model.connect('des_vars.dTs', 'fc.dTs')
-
-    p1.setup()
-
-    # p1.root.list_connections()
-
-    p1['des_vars.alt'] = 17868.79060515557
-    p1['des_vars.MN'] = 2.101070288213628
-    p1['des_vars.dTs'] = 0.0
-    p1['des_vars.W'] = 1.0
-
-    p1.run_model()
-
-    print('Ts_atm: ', p1['fc.ambient.Ts'])
-    print('Ts_set: ', p1['fc.Fl_O:stat:T'])
-    print('Ps_atm: ', p1['fc.ambient.Ps'])
-    print('Ps_set: ', p1['fc.Fl_O:stat:P'])
-    print('rhos_atm: ', p1['fc.ambient.rhos']*32.175)
-    print('rhos_set: ', p1['fc.Fl_O:stat:rho'])
-    print('W', p1['fc.Fl_O:stat:W'])
-
-    print('Pt: ', p1['fc.Fl_O:tot:P'])
+    print("--- FlightConditions standalone test ---")
+    print("Ambient: Ps (psi) =", prob.get_val('cycle.fc.ambient.Ps')[0])
+    print("Ambient: Ts (degR) =", prob.get_val('cycle.fc.ambient.Ts')[0])
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.fc.Fl_O:tot:P')[0])
+    print("Fl_O: tot:T (degR) =", prob.get_val('cycle.fc.Fl_O:tot:T')[0])
+    print("Fl_O: stat:W (lbm/s) =", prob.get_val('cycle.fc.Fl_O:stat:W')[0])
+    print("Fl_O: stat:MN =", prob.get_val('cycle.fc.Fl_O:stat:MN')[0])

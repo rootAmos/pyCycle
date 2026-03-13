@@ -88,3 +88,38 @@ class FlowStart(Element):
         super().setup()
 
 
+if __name__ == "__main__":
+    """Run FlowStart standalone: IVC sets P, T, MN, W; print Fl_O flow station."""
+    import openmdao.api as om
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('MN', 0.5)
+    ivc.add_output('W', 100.0, units='lbm/s')
+
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('W', 'cycle.flow_start.W')
+
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- FlowStart standalone test ---")
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.flow_start.Fl_O:tot:P')[0])
+    print("Fl_O: tot:T (degR) =", prob.get_val('cycle.flow_start.Fl_O:tot:T')[0])
+    print("Fl_O: stat:W (lbm/s) =", prob.get_val('cycle.flow_start.Fl_O:stat:W')[0])
+    print("Fl_O: stat:MN =", prob.get_val('cycle.flow_start.Fl_O:stat:MN')[0])
+
+

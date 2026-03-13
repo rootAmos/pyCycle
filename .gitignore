@@ -2,8 +2,11 @@
 *.pyc
 .cache
 *~
+*.pdf
+*.html
 .DS_Store
 .dropbox
 pycycle.egg-info/*
 /build*
 *testflo_report.out
+*.openmdao_out

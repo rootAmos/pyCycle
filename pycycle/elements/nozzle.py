@@ -463,3 +463,42 @@ class Nozzle(Element):
             self.linear_solver = om.DirectSolver(assemble_jac=True)
 
         super().setup()
+
+
+if __name__ == "__main__":
+    """Run Nozzle standalone: flow_start -> nozzle. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
+
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('W', 100.0, units='lbm/s')
+    ivc.add_output('MN', 0.0)
+    ivc.add_output('Ps_exhaust', 10.0, units='lbf/inch**2')
+    ivc.add_output('Cfg', 0.99)
+
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('nozzle', Nozzle(nozzType='CD', lossCoef='Cfg', internal_solver=True))
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'nozzle.Fl_I')
+
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('Ps_exhaust', 'cycle.nozzle.Ps_exhaust')
+    model.connect('Cfg', 'cycle.nozzle.Cfg')
+
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Nozzle standalone test ---")
+    print("Fg (lbf) =", prob.get_val('cycle.nozzle.Fg')[0])
+    print("Throat:stat:area (in**2) =", prob.get_val('cycle.nozzle.Throat:stat:area')[0])

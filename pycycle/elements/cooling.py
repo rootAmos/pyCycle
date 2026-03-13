@@ -324,16 +324,25 @@ class TurbineCooling(Element):
         super().setup()
 
 if __name__ == "__main__":
+    """Run TurbineCooling standalone (1 stage). IVC sets flow/temp inputs."""
 
     prob = om.Problem()
-    prob.model = TurbineCooling(n_stages=1)
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('Fl_turb_I_tot_T', 518.0, units='degR')
+    ivc.add_output('Fl_turb_I_tot_P', 1.0, units='lbf/inch**2')
+    ivc.add_output('Fl_turb_I_stat_W', 1.0, units='lbm/s')
+    ivc.add_output('Fl_turb_O_tot_P', 1.0, units='lbf/inch**2')
+    ivc.add_output('Fl_cool_tot_T', 518.0, units='degR')
 
-    prob.model.set_input_defaults('Fl_turb_I:tot:T', val=518., units='degR')
-    prob.model.set_input_defaults('Fl_turb_I:tot:P', val=1., units='lbf/inch**2')
-    prob.model.set_input_defaults('Fl_turb_I:stat:W', val= 1.0, units='lbm/s')
-    prob.model.set_input_defaults('Fl_turb_O:tot:P', val=1., units='lbf/inch**2')
-    prob.model.set_input_defaults('Fl_cool:tot:T', val=518., units='degR')
+    model.add_subsystem('cooling', TurbineCooling(n_stages=1))
+    model.connect('Fl_turb_I_tot_T', 'cooling.Fl_turb_I:tot:T')
+    model.connect('Fl_turb_I_tot_P', 'cooling.Fl_turb_I:tot:P')
+    model.connect('Fl_turb_I_stat_W', 'cooling.Fl_turb_I:stat:W')
+    model.connect('Fl_turb_O_tot_P', 'cooling.Fl_turb_O:tot:P')
+    model.connect('Fl_cool_tot_T', 'cooling.Fl_cool:tot:T')
 
     prob.setup(force_alloc_complex=True)
     prob.run_model()
-    prob.check_partials(method='cs', compact_print=True)
+    print("--- TurbineCooling standalone test (n_stages=1) ---")
+    print("Run complete. Use prob.check_partials(method='cs') for derivatives.")

@@ -205,15 +205,41 @@ class Splitter(Element):
         super().setup()
 
 if __name__ == "__main__":
+    """Run Splitter standalone: flow_start -> splitter. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
 
-    p = om.Problem()
-    des_vars = p.model.add_subsystem('des_vars', om.IndepVarComp(), promotes=['*'])
-    des_vars.add_output('W_in', 1.0, units='lbm/s')
-    des_vars.add_output('BPR', 1.5, units=None)
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('W', 10.0, units='lbm/s')
+    ivc.add_output('MN', 0.5)
+    ivc.add_output('BPR', 1.5)
+    ivc.add_output('MN1', 0.5)
+    ivc.add_output('MN2', 0.5)
 
-    p.model.add_subsystem('comp', BPRcalc(), promotes=['*'])
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('splitter', Splitter(design=True))
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'splitter.Fl_I')
 
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('BPR', 'cycle.splitter.BPR')
+    model.connect('MN1', 'cycle.splitter.MN1')
+    model.connect('MN2', 'cycle.splitter.MN2')
 
-    p.setup()
-    p.run_model()
-    p.check_partials()
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Splitter standalone test ---")
+    print("Fl_O1: stat:W =", prob.get_val('cycle.splitter.Fl_O1:stat:W')[0])
+    print("Fl_O2: stat:W =", prob.get_val('cycle.splitter.Fl_O2:stat:W')[0])

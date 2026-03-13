@@ -102,23 +102,28 @@ class Performance(ExplicitComponent):
 
 
 if __name__ == "__main__":
-    from openmdao.core.problem import Problem, IndepVarComp
+    """Run Performance standalone. IVC sets Pt2, Pt3, Fg, ram_drag, Wfuel, power."""
+    from openmdao.api import Problem, IndepVarComp
 
-    p = Problem()
+    prob = Problem()
+    model = prob.model
+    ivc = model.add_subsystem('ivc', IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('power', 200.0, units='hp')
+    ivc.add_output('Pt2', 204.696, units='psi')
+    ivc.add_output('Pt3', 104.696, units='psi')
+    ivc.add_output('Wfuel_0', 2.0, units='lbm/s')
+    ivc.add_output('ram_drag', 100.0, units='lbf')
+    ivc.add_output('Fg_0', 1200.0, units='lbf')
+    ivc.add_output('Fg_1', 2000.0, units='lbf')
 
-    des_vars = p.model.add_subsystem('des_vars', IndepVarComp(), promotes=['*'])
-    des_vars.add_output('power', 200.0, units='hp')
-    des_vars.add_output('Pt2', 204.696, units='psi')
-    des_vars.add_output('Pt3', 104.696, units='psi')
-    des_vars.add_output('Wfuel_0', 2, units='lbm/s')
-    des_vars.add_output('ram_drag', 100, units='lbf')
-    des_vars.add_output('Fg_0', 1200, units='lbf')
-    des_vars.add_output('Fg_1', 2000, units='lbf')
+    model.add_subsystem('perf', Performance(num_nozzles=2, num_burners=1))
+    for name in ['power', 'Pt2', 'Pt3', 'Wfuel_0', 'ram_drag', 'Fg_0', 'Fg_1']:
+        model.connect(name, 'perf.' + name)
 
-    p.model.add_subsystem('comp', Performance(num_nozzles=2, num_burners=1), promotes=['*'])
-    # p.model.comp.fd_options['form'] = 'complex_step'
+    prob.setup(check=True)
+    prob.run_model()
 
-    p.setup(check=True)
-    p.run_model()
-
-    p.check_partials(compact_print=True)
+    print("--- Performance standalone test ---")
+    print("OPR =", prob.get_val('perf.OPR')[0])
+    print("Fn (lbf) =", prob.get_val('perf.Fn')[0])
+    print("TSFC =", prob.get_val('perf.TSFC')[0])

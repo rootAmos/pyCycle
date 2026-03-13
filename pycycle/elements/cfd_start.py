@@ -63,26 +63,24 @@ class CFDStart(Element):
 
 
 if __name__ == "__main__":
+    """Run CFDStart standalone. IVC sets Ps, V, area, W; print Fl_O."""
 
-    p = om.Problem()
+    prob = om.Problem()
+    ivc = prob.model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('Ps', units='Pa', val=22845.15677648)
+    ivc.add_output('V', units='m/s', val=158.83851913)
+    ivc.add_output('area', units='m**2', val=0.87451328)
+    ivc.add_output('W', units='kg/s', val=50.2454107)
 
-    params = p.model.add_subsystem('params', om.IndepVarComp(), promotes=['*'])
-    params.add_output('Ps', units='Pa', val=22845.15677648)
-    params.add_output('V', units='m/s', val=158.83851913)
-    params.add_output('area', units='m**2', val=0.87451328)
-    params.add_output('W', units='kg/s', val=50.2454107)
+    prob.model.add_subsystem('cfd_start', CFDStart(), promotes_inputs=['Ps', 'V', 'area', 'W'])
 
-    p.model.add_subsystem('cfd_start', CFDStart(), promotes_inputs=['Ps', 'V', 'area', 'W'])
+    prob.setup(check=False)
+    prob.set_solver_print(level=-1)
+    prob.run_model()
 
-    p.setup(check=False)
-
-    p.set_solver_print(level=-1)
-    p.set_solver_print(level=2, depth=1)
-
-
-    p.run_model()
-
-    p.model.list_outputs(residuals=True)
+    print("--- CFDStart standalone test ---")
+    print("Fl_O: tot:P =", prob.get_val('cfd_start.Fl_O:tot:P')[0])
+    print("Fl_O: stat:W =", prob.get_val('cfd_start.Fl_O:stat:W')[0])
 
 
 

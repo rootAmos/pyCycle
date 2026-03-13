@@ -586,3 +586,46 @@ class Compressor(Element):
 
         super().setup()
 
+
+if __name__ == "__main__":
+    """Run Compressor standalone: flow_start -> compressor. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
+
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('W', 10.0, units='lbm/s')
+    ivc.add_output('MN', 0.5)
+    ivc.add_output('PR', 6.0)
+    ivc.add_output('eff', 0.9)
+    ivc.add_output('Nmech', 1000.0, units='rpm')
+
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('compressor', Compressor(design=True, map_data=NCP01), promotes_inputs=['Nmech'])
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'compressor.Fl_I')
+
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('MN', 'cycle.compressor.MN')
+    model.connect('PR', 'cycle.compressor.PR')
+    model.connect('eff', 'cycle.compressor.eff')
+    model.connect('Nmech', 'cycle.Nmech')
+
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Compressor standalone test ---")
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.compressor.Fl_O:tot:P')[0])
+    print("Fl_O: tot:T (degR) =", prob.get_val('cycle.compressor.Fl_O:tot:T')[0])
+    print("power (hp) =", prob.get_val('cycle.compressor.power')[0])
+

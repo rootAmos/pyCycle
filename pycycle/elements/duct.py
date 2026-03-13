@@ -249,24 +249,44 @@ class Duct(Element):
         super().setup()
 
 if __name__ == "__main__":
+    """Run Duct standalone: flow_start -> duct. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
 
-    p = om.Problem()
-    p.model = om.Group()
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('MN', 0.5)
+    ivc.add_output('W', 100.0, units='lbm/s')
+    ivc.add_output('dPqP', 0.02)
+    ivc.add_output('duct_MN', 0.45)
+    ivc.add_output('Q_dot', 0.0, units='Btu/s')
 
-    # params = (
-    #     ('dPqP', 0.02, {'shape': 1, 'desc': 'pressure differential as a fraction of incoming pressure'}),
-    #     ('Pt_in', 5.0, {'units': 'lbf/inch**2', 'shape': 1, 'desc': 'Inlet total pressure'}),
-    #     ('MN_in', 0.5)
-    # )
-    # p.model.add_subsystem('des_vars', om.IndepVarComp(params), promotes=['*'])
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('flow_start', FlowStart())
+    cycle.add_subsystem('duct', Duct())
+    cycle.pyc_connect_flow('flow_start.Fl_O', 'duct.Fl_I')
 
+    model.connect('P', 'cycle.flow_start.P')
+    model.connect('T', 'cycle.flow_start.T')
+    model.connect('MN', 'cycle.flow_start.MN')
+    model.connect('W', 'cycle.flow_start.W')
+    model.connect('dPqP', 'cycle.duct.dPqP')
+    model.connect('duct_MN', 'cycle.duct.MN')
+    model.connect('Q_dot', 'cycle.duct.Q_dot')
 
-    p.model.add_subsystem('comp', PressureLoss(), promotes=['*'])
-    p.model.add_subsystem('loss', MachPressureLossMap(design=True, expMN=2.0), promotes=['*'])
+    prob.setup(check=False)
+    prob.run_model()
 
-    
-    p.setup(check=False, force_alloc_complex=True)
-    p.run_model()
-
-    p.check_partials(method='cs', compact_print=True)
+    print("--- Duct standalone test ---")
+    print("Fl_I: tot:P (psi) =", prob.get_val('cycle.duct.Fl_I:tot:P')[0])
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.duct.Fl_O:tot:P')[0])
+    print("Fl_O: stat:W (lbm/s) =", prob.get_val('cycle.duct.Fl_O:stat:W')[0])
+    print("dPqP = 0.02 -> Pt_out = Pt_in * (1 - dPqP)")
 

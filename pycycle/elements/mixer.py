@@ -310,3 +310,41 @@ class Mixer(Element):
 
         super().setup()
 
+
+if __name__ == "__main__":
+    """Run Mixer standalone: two flow_starts -> mixer. IVC sets all inputs."""
+    from pycycle.mp_cycle import Cycle
+    from pycycle.thermo.cea.species_data import janaf
+    from pycycle.elements.flow_start import FlowStart
+
+    prob = om.Problem()
+    model = prob.model = om.Group()
+    ivc = model.add_subsystem('ivc', om.IndepVarComp(), promotes_outputs=['*'])
+    ivc.add_output('P', 17.0, units='psi')
+    ivc.add_output('T', 500.0, units='degR')
+    ivc.add_output('MN', 0.5)
+    ivc.add_output('W', 100.0, units='lbm/s')
+
+    cycle = model.add_subsystem('cycle', Cycle())
+    cycle.options['thermo_method'] = 'CEA'
+    cycle.options['thermo_data'] = janaf
+    cycle.options['design'] = True
+    cycle.add_subsystem('start1', FlowStart(), promotes=['P', 'T', 'MN', 'W'])
+    cycle.add_subsystem('start2', FlowStart(), promotes=['P', 'T', 'MN', 'W'])
+    cycle.add_subsystem('mixer', Mixer(design=True))
+    cycle.pyc_connect_flow('start1.Fl_O', 'mixer.Fl_I1')
+    cycle.pyc_connect_flow('start2.Fl_O', 'mixer.Fl_I2')
+
+    model.connect('P', 'cycle.P')
+    model.connect('T', 'cycle.T')
+    model.connect('MN', 'cycle.MN')
+    model.connect('W', 'cycle.W')
+
+    prob.setup(check=False)
+    prob.run_model()
+
+    print("--- Mixer standalone test ---")
+    print("Fl_O: stat:area =", prob.get_val('cycle.mixer.Fl_O:stat:area')[0])
+    print("Fl_O: tot:P (psi) =", prob.get_val('cycle.mixer.Fl_O:tot:P')[0])
+    print("ER =", prob.get_val('cycle.mixer.ER')[0])
+
