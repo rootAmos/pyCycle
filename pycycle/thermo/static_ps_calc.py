@@ -1,11 +1,24 @@
+"""
+Static pressure calculator: Mach number, velocity, speed of sound, and area when static pressure is known.
+
+PsCalc is an explicit component used in static_Ps thermo mode. Given total and static
+enthalpy (ht, hs), static temperature (Ts), gamma, R, mass flow W, and density rho,
+it computes:
+- V: velocity from ht - hs = V^2/2 (with a fallback when ht < hs for solver robustness)
+- Vsonic: speed of sound = sqrt(gamma * R * Ts)
+- MN: Mach number = V / Vsonic
+- area: from continuity W = rho * V * A => A = W / (rho * V)
+"""
+
 import numpy as np
 
 from openmdao.api import ExplicitComponent
 
 from pycycle.constants import R_UNIVERSAL_SI
 
+
 class PsCalc(ExplicitComponent):
-    """Mach number, Area calculation for when Ps is known"""
+    """Mach number, velocity, speed of sound, and area when static pressure (Ps) is known."""
 
     def setup(self):
 
@@ -71,7 +84,23 @@ class PsCalc(ExplicitComponent):
         J['area','hs'] = -inputs['W'] / (inputs['rho'] * V**2) * J['V','hs']
 
 
-
-
+if __name__ == "__main__":
+    from openmdao.api import Problem, Group, IndepVarComp
+    prob = Problem()
+    prob.model = Group()
+    ivc = prob.model.add_subsystem("ivc", IndepVarComp(), promotes=["*"])
+    ivc.add_output("gamma", val=1.4)
+    ivc.add_output("R", val=287.0, units="J/kg/degK")
+    ivc.add_output("Ts", val=300.0, units="degK")
+    ivc.add_output("ht", val=350e3, units="J/kg")
+    ivc.add_output("hs", val=300e3, units="J/kg")
+    ivc.add_output("W", val=10.0, units="kg/s")
+    ivc.add_output("rho", val=1.2, units="kg/m**3")
+    prob.model.add_subsystem("ps_calc", PsCalc(), promotes=["*"])
+    prob.setup()
+    prob.run_model()
+    print("PsCalc test: MN={:.4f}  V={:.2f} m/s  area={:.6f} m^2".format(
+        prob.get_val("MN")[0], prob.get_val("V", units="m/s")[0], prob.get_val("area", units="m**2")[0]))
+    print("OK")
 
 

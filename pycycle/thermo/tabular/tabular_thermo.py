@@ -1,3 +1,13 @@
+"""
+Tabular thermodynamics: interpolate h, S, gamma, Cp, Cv, rho, R from precomputed tables.
+
+SetTotalTP: OpenMDAO Group that uses MetaModelStructuredComp to interpolate thermo outputs
+  from training data (spec) over inputs P, T and composition (e.g. FAR). spec is a dict
+  with arrays for each composition key and for P, T, h, S, gamma, Cp, Cv, rho, R.
+  composition option defines the composition keys (e.g. TAB_AIR_FUEL_COMPOSITION).
+  Exposes .composition as a list for flow-station API compatibility.
+"""
+
 import numpy as np
 import openmdao.api as om
 
@@ -48,3 +58,21 @@ class SetTotalTP(om.Group):
         # use a sorted list of keys, so dictionary hash ordering doesn't bite us
         # loop over keys and create a vector of mass fractions
         self.composition = [composition[k] for k in sorted_compo]
+
+
+if __name__ == "__main__":
+    # Test SetTotalTP with tabular spec (requires air_jetA.pkl).
+    from pycycle.constants import TAB_AIR_FUEL_COMPOSITION
+    prob = om.Problem()
+    prob.model.add_subsystem(
+        "tab",
+        SetTotalTP(spec=AIR_JETA_TAB_SPEC, composition=TAB_AIR_FUEL_COMPOSITION),
+        promotes=["*"],
+    )
+    prob.model.set_input_defaults("P", 101325.0, units="Pa")
+    prob.model.set_input_defaults("T", 500.0, units="degK")
+    prob.model.set_input_defaults("composition", val=[0.0])  # FAR
+    prob.setup()
+    prob.run_model()
+    print("Tabular SetTotalTP test: h=", prob.get_val("h")[0], "gamma=", prob.get_val("gamma")[0])
+    print("OK")

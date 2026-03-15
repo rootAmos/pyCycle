@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(GIT_COMMITTER_NAME=\"rootAmos\" GIT_COMMITTER_EMAIL=\"a.root.amos@gmail.com\" git commit --amend --no-edit --author=\"rootAmos <a.root.amos@gmail.com>\")"
+    ]
+  }
+}

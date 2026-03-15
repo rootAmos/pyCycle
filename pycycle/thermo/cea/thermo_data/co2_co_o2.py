@@ -1,4 +1,14 @@
-"""CO2, CO, O2 reactants, used for testing and development, a subset of the janaf thermo fit set"""
+"""
+CEA thermo_data: CO2, CO, O2 only (subset of JANAF-style fits).
+
+Used for testing and development. Each product has:
+- coeffs: list of 7- or 9-term NASA polynomial coefficient sets per temperature range.
+- ranges: temperature breakpoints (K), e.g. [200, 1000, 6000, 20000].
+- wt: molecular weight (g/mol).
+- elements: dict of element symbol -> atom count (e.g. {'C':1, 'O':2} for CO2).
+
+element_wts: atomic weights for C, O (g/mol).
+"""
 
 import numpy as np
 from collections import OrderedDict
@@ -57,3 +67,13 @@ element_wts = {
 }
 
 # default_elements = {'C':0.02272237, 'O':0.04544473}
+
+
+if __name__ == "__main__":
+    # Run as: python -m pycycle.thermo.cea.thermo_data.co2_co_o2
+    from pycycle.thermo.cea.species_data import Properties
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
+    import pycycle.thermo.cea.thermo_data.co2_co_o2 as mod
+    p = Properties(mod, init_elements=CEA_CO2_CO_O2_COMPOSITION)
+    print("co2_co_o2 products:", p.products)
+    print("OK")

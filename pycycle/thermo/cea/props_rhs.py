@@ -1,3 +1,13 @@
+"""
+Right-hand sides and left-hand side matrix for T and P linear solves in CEA property calcs.
+
+PropsRHS: From (T, n, n_moles, composition) builds:
+  - lhs_TP: (num_element+1) x (num_element+1) matrix A for both linear systems (same matrix).
+  - rhs_T: RHS for the T-solve (enthalpy-weighted sums; last row is sum(n_j*H0_j)).
+  - rhs_P: RHS for the P-solve (composition b0 and n_moles).
+  Used by ThermoCalcs with LinearSystemComp to get result_T and result_P for PropsCalcs.
+"""
+
 import numpy as np
 
 from openmdao.api import ExplicitComponent
@@ -7,6 +17,7 @@ from pycycle.thermo.cea import species_data
 
 
 class PropsRHS(ExplicitComponent):
+    """Builds lhs_TP, rhs_T, rhs_P for the T and P linear systems in CEA thermo."""
 
     def __init__(self, thermo):
         super(PropsRHS, self).__init__()
@@ -138,10 +149,11 @@ class PropsRHS(ExplicitComponent):
 
 
 if __name__ == "__main__":
-
     from openmdao.api import Problem, Group, IndepVarComp, LinearSystemComp
+    from pycycle.thermo.cea.thermo_data import co2_co_o2
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
 
-    thermo = species_data.Properties(species_data.co2_co_o2)
+    thermo = species_data.Properties(co2_co_o2, init_elements=CEA_CO2_CO_O2_COMPOSITION)
 
     p = Problem()
     p.model = Group()

@@ -1,3 +1,13 @@
+"""
+CEA ThermoAdd: mix inflow with reactant(s) or flow(s) and output mixed composition and mass-averaged enthalpy.
+
+ThermoAdd (ExplicitComponent) inputs: Fl_I:stat:W, Fl_I:tot:h, Fl_I:tot:composition; for each
+  mix port: {name}:h and either {name}:ratio (reactant mode) or {name}:composition and {name}:W (flow mode).
+Outputs: mass_avg_h, Wout, composition_out. In reactant mode, mix_composition names (e.g. 'JP-7')
+  are looked up in spec.reactants to get element counts; in flow mode, mixed flow compositions
+  are combined by mass. output_port_data() returns the mixed element set for downstream thermo setup.
+"""
+
 import numpy as np
 
 import openmdao.api as om
@@ -7,9 +17,7 @@ from pycycle.thermo.cea.species_data import Properties, janaf
 
 
 class ThermoAdd(om.ExplicitComponent):
-    """
-    ThermoAdd calculates a new composition given inflow, a reactant to add, and a mix ratio.
-    """
+    """Mixes inflow with reactant(s) or flow(s); outputs composition_out, Wout, mass_avg_h."""
 
     def initialize(self):
         self.options.declare('spec', default=janaf,
@@ -190,3 +198,26 @@ class ThermoAdd(om.ExplicitComponent):
         outputs['mass_avg_h'] = mass_avg_h
         outputs['Wout'] = W_out
 
+
+if __name__ == "__main__":
+    # Test ThermoAdd in reactant mode: air + fuel ratio -> composition_out, Wout, mass_avg_h.
+    from pycycle.constants import CEA_AIR_COMPOSITION
+
+    prob = om.Problem()
+    prob.model.add_subsystem(
+        "mix",
+        ThermoAdd(spec=janaf, inflow_composition=CEA_AIR_COMPOSITION, mix_mode="reactant",
+                  mix_composition="Methane", mix_names="fuel"),
+        promotes=["*"],
+    )
+    prob.model.set_input_defaults("Fl_I:stat:W", 100.0, units="lbm/s")
+    prob.model.set_input_defaults("Fl_I:tot:h", 120.0, units="Btu/lbm")
+    prob.model.set_input_defaults("Fl_I:tot:composition", val=Properties(janaf, init_elements=CEA_AIR_COMPOSITION).b0)
+    prob.model.set_input_defaults("fuel:h", 200.0, units="Btu/lbm")
+    prob.model.set_input_defaults("fuel:ratio", 0.03)
+    prob.setup()
+    prob.run_model()
+    print("ThermoAdd (reactant Methane) test:")
+    print("  Wout =", prob.get_val("Wout", units="lbm/s")[0], "lbm/s")
+    print("  mass_avg_h =", prob.get_val("mass_avg_h", units="Btu/lbm")[0], "Btu/lbm")
+    print("OK")

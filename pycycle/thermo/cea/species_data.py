@@ -1,3 +1,15 @@
+"""
+CEA-style species thermodynamic properties from NASA polynomial fits.
+
+Properties: Builds from a thermo_data module (e.g. co2_co_o2, janaf) and init_elements
+  (element moles per kg mixture). Builds stoichiometric matrix aij, element weights,
+  product list, and temperature-range coefficient table. Provides:
+  - H0(T), S0(T), Cp0(T): standard-state molar enthalpy, entropy, heat capacity (J/mol units).
+  - H0_applyJ, S0_applyJ, Cp0_applyJ: Jacobian-vector products for derivatives w.r.t. T.
+  Coefficients are selected per species from temperature ranges (build_coeff_table) and
+  the standard NASA polynomial formulas are evaluated.
+"""
+
 from collections import OrderedDict
 
 import numpy as np
@@ -11,8 +23,10 @@ from pycycle.thermo.cea.thermo_data import wet_air
 
 #from ad.admath import log
 from numpy import log
+
+
 class Properties(object):
-    """Compute H, S, Cp given a species and temperature"""
+    """CEA-style species data: H0, S0, Cp0 and their T-derivatives from NASA polynomials."""
     
     def __init__(self, thermo_data_module, init_elements=None):
 
@@ -184,3 +198,15 @@ class Properties(object):
 
         self.valid_temp_range = (max_low, min_high)
 
+
+if __name__ == "__main__":
+    # Test Properties: H0, S0, Cp0 at a few temperatures for co2_co_o2.
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
+    T = np.array([500.0])
+    props = Properties(co2_co_o2, init_elements=CEA_CO2_CO_O2_COMPOSITION)
+    print("Properties (co2_co_o2) test:")
+    print("  products:", props.products)
+    print("  T=500 K: H0=", props.H0(T), " S0=", props.S0(T), " Cp0=", props.Cp0(T))
+    T2 = np.array([1200.0])
+    print("  T=1200 K: H0=", props.H0(T2), " S0=", props.S0(T2))
+    print("OK")
