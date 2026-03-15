@@ -1,3 +1,16 @@
+"""
+Thermo: Main thermodynamic group and thermo-add mixer dispatcher.
+
+This module provides:
+- Thermo: An OpenMDAO Group that computes thermodynamic state (T, P, h, S, gamma, etc.)
+  for a flow in one of several modes (total_TP, total_SP, total_hP, static_MN, static_A, static_Ps)
+  using either CEA or TABULAR method. It wires base thermo (SetTotalTP), optional balance
+  (for SP/hP/static), optional PsCalc/PsResid for static flow, and EngUnitProps for
+  English-unit outputs.
+- ThermoAdd: A Group that delegates to CEA or TABULAR ThermoAdd to compute mixed
+  composition and mass-averaged enthalpy when adding fuel/reactant or another flow.
+"""
+
 import openmdao.api as om
 
 from pycycle.thermo.static_ps_calc import PsCalc
@@ -248,5 +261,27 @@ class ThermoAdd(om.Group):
         return self.thermo_adder.output_port_data()
 
 
+if __name__ == "__main__":
+    # Quick test: build a Thermo group in total_TP mode with CEA and run once.
+    import numpy as np
+    from pycycle.thermo.cea.thermo_data import co2_co_o2
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
 
-
+    prob = om.Problem()
+    prob.model.add_subsystem(
+        "thermo",
+        Thermo(method="CEA", mode="total_TP", fl_name="flow", thermo_kwargs={
+            "spec": co2_co_o2,
+            "composition": CEA_CO2_CO_O2_COMPOSITION,
+        }),
+        promotes=["*"],
+    )
+    prob.model.set_input_defaults("T", 800.0, units="degK")
+    prob.model.set_input_defaults("P", 1.0, units="bar")
+    prob.model.set_input_defaults("composition", val=np.array(prob.model.thermo.base_thermo.composition))
+    prob.setup()
+    prob.run_model()
+    print("Thermo total_TP test (CEA):")
+    print("  T=", prob.get_val("T", units="degK")[0], "K  P=", prob.get_val("P", units="bar")[0], "bar")
+    print("  h=", prob.get_val("flow:tot:h", units="Btu/lbm")[0], "Btu/lbm  gamma=", prob.get_val("gamma")[0])
+    print("  OK")

@@ -1,3 +1,15 @@
+"""
+Static residual component: implicit relation when Mach number or area is specified.
+
+PsResid is an ImplicitComponent used when thermo mode is static_MN or static_A.
+- mode='MN': Area is the state; we satisfy total-enthalpy balance (ht from Ps, MN, gamma, etc.).
+- mode='area': Mach number is the state; same ht balance.
+
+The residual for Ps is (ht_calc - ht)/ht, where ht_calc is computed from static state
+and MN (from TN&D-132 Eq. 85). guess_nonlinear provides initial Ps from isentropic
+relations to speed Newton convergence.
+"""
+
 import numpy as np
 from scipy.optimize import fsolve
 
@@ -5,8 +17,9 @@ import openmdao.api as om
 
 from pycycle.constants import R_UNIVERSAL_SI
 
+
 class PsResid(om.ImplicitComponent):
-    """Actual implicit relationship for when Mach number is specified"""
+    """Implicit residual for static flow when Mach number or area is specified (not Ps)."""
 
     def initialize(self):
         self.options.declare('mode', values=['MN', 'area'])
@@ -299,3 +312,32 @@ class PsResid(om.ImplicitComponent):
             J['Ps', 'rho'] = MN*gamma*R*Ts*dMN_drho/ht
             J['V', 'rho'] = dMN_drho*Vsonic
             J['MN', 'rho'] = dMN_drho
+
+
+if __name__ == "__main__":
+    import openmdao.api as om
+    from pycycle.thermo.cea.species_data import Properties
+    from pycycle.thermo.cea.thermo_data import co2_co_o2
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
+    thermo_props = Properties(co2_co_o2, init_elements=CEA_CO2_CO_O2_COMPOSITION)
+    prob = om.Problem()
+    prob.model.add_subsystem("ivc", om.IndepVarComp(), promotes=["*"])
+    prob.model.ivc.add_output("Ts", val=400.0, units="degK")
+    prob.model.ivc.add_output("ht", val=4e5, units="J/kg")
+    prob.model.ivc.add_output("hs", val=3.5e5, units="J/kg")
+    prob.model.ivc.add_output("R", val=260.0, units="J/kg/degK")
+    prob.model.ivc.add_output("gamma", val=1.35)
+    prob.model.ivc.add_output("W", val=5.0, units="kg/s")
+    prob.model.ivc.add_output("rho", val=1.0, units="kg/m**3")
+    prob.model.ivc.add_output("guess:gamt", val=1.35)
+    prob.model.ivc.add_output("guess:Pt", val=2.0, units="bar")
+    prob.model.ivc.add_output("MN", val=0.5)
+    prob.model.add_subsystem("ps_resid", PsResid(mode="MN"), promotes=["*"])
+    prob.model.nonlinear_solver = om.NewtonSolver(solve_subsystems=True)
+    prob.model.linear_solver = om.DirectSolver()
+    prob.setup()
+    prob.run_model()
+    print("PsResid(MN) test: Ps={:.6f} bar  area={:.6f} m^2".format(
+        prob.get_val("Ps", units="bar")[0], prob.get_val("area", units="m**2")[0]))
+    print("OK")
+

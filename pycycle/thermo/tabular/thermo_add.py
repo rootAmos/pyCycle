@@ -1,18 +1,25 @@
+"""
+Tabular ThermoAdd: mix inflow with reactant or flow and output composition vector and mass-averaged enthalpy.
+
+Composition is a vector of ratios (e.g. FAR and optionally others). In reactant mode,
+  one reactant name (e.g. from TAB composition keys) and ratio(s) per mix port;
+  in flow mode, composition vectors and W per mix port. Outputs composition_out (vector),
+  Wout, mass_avg_h. Partial derivatives use complex step.
+"""
+
 import numpy as np
 
 import openmdao.api as om
 
 from pycycle.constants import AIR_JETA_TAB_SPEC, TAB_AIR_FUEL_COMPOSITION
 
+
 class ThermoAdd(om.ExplicitComponent):
     """
-    ThermoAdd calculates a new composition given inflow, 
-    a reactant to add, and a mix ratio.
+    Tabular ThermoAdd: new composition_out and mass_avg_h from inflow + mix(es).
 
-    When in `reactant` mode you can only mix one reactant type per instance. 
-    You may have as many mix ports as you like, but all must use the same reactant. 
-
-    If you want to mix multiple reactants, use two separate instances. 
+    In reactant mode all mix ports use the same reactant type (one key in composition).
+    For multiple reactants use separate ThermoAdd instances.
     """
 
     def initialize(self):
@@ -144,5 +151,22 @@ class ThermoAdd(om.ExplicitComponent):
             outputs['mass_avg_h'] = W_times_h/W_out
 
 
+if __name__ == "__main__":
+    # Test tabular ThermoAdd in reactant mode (FAR).
+    prob = om.Problem()
+    prob.model.add_subsystem(
+        "mix",
+        ThermoAdd(spec=AIR_JETA_TAB_SPEC, mix_mode="reactant", mix_composition="FAR", mix_names="fuel"),
+        promotes=["*"],
+    )
+    prob.model.set_input_defaults("Fl_I:stat:W", 100.0, units="lbm/s")
+    prob.model.set_input_defaults("Fl_I:tot:h", 120.0, units="Btu/lbm")
+    prob.model.set_input_defaults("Fl_I:tot:composition", val=[0.0])
+    prob.model.set_input_defaults("fuel:h", 200.0, units="Btu/lbm")
+    prob.model.set_input_defaults("fuel:ratio", 0.03)
+    prob.setup()
+    prob.run_model()
+    print("Tabular ThermoAdd test: Wout=", prob.get_val("Wout")[0], "composition_out=", prob.get_val("composition_out"))
+    print("OK")
 
         

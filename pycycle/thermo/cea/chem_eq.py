@@ -1,3 +1,16 @@
+"""
+CEA chemical equilibrium and total-TP thermo group.
+
+- ThermoCalcs: Group that from (T, P, n, n_moles, composition) builds the linear-system
+  right-hand sides and matrix (PropsRHS), solves for result_T and result_P (LinearSystemComp),
+  then computes h, S, gamma, Cp, Cv, rho, R via PropsCalcs.
+- ChemEq: ImplicitComponent that finds equilibrium mole numbers n and Lagrange multipliers pi
+  for a gas mixture at given T, P and element composition. Uses Gibbs free energy
+  minimization (mu_i = sum(pi * a_ij), mass balance sum(a_ij * n_j) = b_i). Outputs n_moles = sum(n).
+- SetTotalTP: Group that builds Properties from spec/composition, runs ChemEq and ThermoCalcs
+  to provide h, S, gamma, Cp, Cv, rho, R (and composition) for total T, P state.
+"""
+
 import numpy as np
 
 import openmdao.api as om
@@ -8,6 +21,14 @@ from pycycle.thermo.cea import species_data
 from pycycle.thermo.cea.props_rhs import PropsRHS
 from pycycle.thermo.cea.props_calcs import PropsCalcs
 
+
+def _resid_weighting(n):
+    """Sigmoid-like weight to damp residuals for trace species (small n) for numerical stability."""
+    old = np.seterr(under='ignore')
+    try:
+        return (1 / (1 + np.exp(-1e5 * n)) - .5) * 2
+    finally:
+        np.seterr(**old)
 
 
 class ThermoCalcs(om.Group):
@@ -35,14 +56,6 @@ class ThermoCalcs(om.Group):
         self.connect('TP2ls.rhs_P', 'ls2p.b')
         self.connect('ls2t.x', 'tp2props.result_T')
         self.connect('ls2p.x', 'tp2props.result_P')
-
-
-def _resid_weighting(n):
-    old = np.seterr(under='ignore')
-    try:
-        return (1 / (1 + np.exp(-1e5 * n)) - .5) * 2
-    finally:
-        np.seterr(**old)
 
 
 class ChemEq(om.ImplicitComponent):
@@ -155,7 +168,7 @@ class ChemEq(om.ImplicitComponent):
             self.H0_T = H0_T = thermo.H0(T)
             self.S0_T = S0_T = thermo.S0(T)
         except:
-            raise AnalysisError('Bad Temp')
+            raise om.AnalysisError('Bad Temp')
             # T[:] = 500.
             # self.H0_T = H0_T = thermo.H0(T)
             # self.S0_T = S0_T = thermo.S0(T)
@@ -352,5 +365,24 @@ class SetTotalTP(om.Group):
         self.add_subsystem('props', ThermoCalcs(thermo=self.thermo), promotes=['*'])
 
 
+if __name__ == "__main__":
+    # Test SetTotalTP: chemical equilibrium + property calcs at fixed T, P.
+    from pycycle.thermo.cea.thermo_data import co2_co_o2
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
+
+    prob = om.Problem()
+    prob.model.add_subsystem(
+        "thermo",
+        SetTotalTP(spec=co2_co_o2, composition=CEA_CO2_CO_O2_COMPOSITION),
+        promotes=["*"],
+    )
+    prob.model.set_input_defaults("T", 1000.0, units="degK")
+    prob.model.set_input_defaults("P", 1.0, units="bar")
+    prob.setup()
+    prob.run_model()
+    print("SetTotalTP (CEA co2_co_o2) test:")
+    print("  n_moles =", prob.get_val("n_moles")[0])
+    print("  h =", prob.get_val("h", units="cal/g")[0], "cal/g  gamma =", prob.get_val("gamma")[0])
+    print("OK")
 
 
