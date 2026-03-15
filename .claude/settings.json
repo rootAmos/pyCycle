@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:/Users/AlexanderAmos/miniconda3/envs/therm_env/python.exe\" -c \":*)",
+      "Bash(conda run:*)",
+      "Bash(source /c/Users/AlexanderAmos/miniconda3/etc/profile.d/conda.sh)",
+      "Bash(conda activate:*)",
+      "Bash(python example_cycles/duality.py)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}
