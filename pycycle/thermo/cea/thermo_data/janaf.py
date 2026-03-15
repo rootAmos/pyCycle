@@ -1,3 +1,13 @@
+"""
+CEA thermo_data: JANAF-style NASA polynomials for air/fuel combustion species.
+
+Contains products (Ar, CH4, CO, CO2, H, H2, H2O, N2, O2, OH, etc.) with multi-range
+NASA polynomial coeffs, molecular weights, and element counts. Also defines
+reactants (JP-7, Jet-A(g), H2, Methane, Water) as element-based compositions for
+mixing. big_range / small_range are standard temperature breakpoint arrays (K).
+Used by CEA chemical equilibrium and ThermoAdd.
+"""
+
 import numpy as np
 
 from collections import OrderedDict

@@ -1,9 +1,22 @@
+"""
+Unit conversion components: pass-through from SI (or internal) to English units for flow stations.
+
+EngUnitProps: Maps thermo outputs (T, P, h, S, gamma, Cp, Cv, rho, R, composition) to
+  flow-station names like 'flow:T', 'flow:P', etc., in English units (degR, psi, Btu/lbm, etc.).
+EngUnitStaticProps: Maps static flow outputs (area, W, V, Vsonic, MN) to flow-station names
+  in English units (inch**2, lbm/s, ft/s, etc.).
+
+Both use UnitCompBase: they declare inputs, then setup_io() adds outputs with the same
+values (and optionally units) and declare_partials so the Jacobian is identity (pass-through).
+"""
+
 import inspect
 import numpy as np
 
 from openmdao.api import ExplicitComponent
 from openmdao.core.component import Component
 
+# Restrict which add_output kwargs we copy from input meta to output (e.g. units, desc)
 _full_out_args = inspect.getfullargspec(Component.add_output)
 _allowed_out_args = set(_full_out_args.args[3:] + _full_out_args.kwonlyargs)
 
@@ -81,30 +94,23 @@ class EngUnitStaticProps(UnitCompBase):
 
 
 if __name__ == "__main__":
-
+    # Test EngUnitStaticProps: pass-through of area, W, V, Vsonic, MN to flow:* in English units.
     from openmdao.api import Problem, Group, IndepVarComp
-    from pycycle.cea import species_data
 
-    thermo = species_data.Properties(species_data.co2_co_o2)
+    class TestGroup(Group):
+        def configure(self):
+            self.units.setup_io()
 
     p = Problem()
-    model = p.model = Group()
-    indep = model.add_subsystem('indep', IndepVarComp(), promotes=['*'])
-    # indep.add_output('T', val=100., units='degK')
-    # indep.add_output('P', val=1., units='bar')
-    indep.add_output('T', val=100., units='degR')
-    indep.add_output('P', val=1., units='psi')
-
-    model.add_subsystem('units', EngUnitProps(thermo=thermo), promotes=['*'])
-
+    model = p.model = TestGroup()
+    indep = model.add_subsystem("indep", IndepVarComp(), promotes=["*"])
+    indep.add_output("area", val=100.0, units="inch**2")
+    indep.add_output("W", val=100.0, units="lbm/s")
+    indep.add_output("V", val=500.0, units="ft/s")
+    indep.add_output("Vsonic", val=1100.0, units="ft/s")
+    indep.add_output("MN", val=0.45)
+    model.add_subsystem("units", EngUnitStaticProps(fl_name="flow"), promotes=["*"])
     p.setup()
-
     p.run_model()
-
-    p.model.run_linearize()
-    jac = p.model.get_subsystem('units').jacobian._subjacs
-
-    for pair in jac:
-        print(pair)
-        print(jac[pair])
-        print()
+    print("EngUnitStaticProps test: flow:MN =", p.get_val("flow:MN")[0])
+    print("OK")

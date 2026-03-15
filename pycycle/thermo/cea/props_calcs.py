@@ -1,3 +1,13 @@
+"""
+Property calculations from equilibrium mixture (CEA).
+
+PropsCalcs: ExplicitComponent that takes converged equilibrium (n, n_moles, T, P) and
+  linear-solve results (result_T, result_P) and computes mixture h, S, gamma, Cp, Cv, rho, R.
+  Uses species H0, S0, Cp0 from the thermo object and the result_T/result_P terms for
+  d(ln V)/d(ln T) and d(ln V)/d(ln P) in Cv and gamma. All outputs in cal/g or cal/(g*K) except
+  R in SI; rho in g/cm**3.
+"""
+
 import numpy as np
 
 from openmdao.api import ExplicitComponent
@@ -6,7 +16,7 @@ from pycycle.constants import P_REF, R_UNIVERSAL_ENG, R_UNIVERSAL_SI, MIN_VALID_
 
 
 class PropsCalcs(ExplicitComponent):
-    """computes, S, H, Cp, Cv, gamma, given a converged equilibirum mixture"""
+    """Computes h, S, gamma, Cp, Cv, rho, R from converged equilibrium mixture and linear-solve results."""
 
     def initialize(self):
         self.options.declare('thermo', desc='thermodynamic data object', recordable=False)
@@ -215,12 +225,12 @@ class PropsCalcs(ExplicitComponent):
 
 
 if __name__ == "__main__":
-
     from openmdao.api import Problem, Group, IndepVarComp
+    from pycycle.thermo.cea import species_data
+    from pycycle.thermo.cea.thermo_data import co2_co_o2
+    from pycycle.constants import CEA_CO2_CO_O2_COMPOSITION
 
-    from pycycle.cea import species_data
-
-    thermo = species_data.Properties(species_data.co2_co_o2)
+    thermo = species_data.Properties(co2_co_o2, init_elements=CEA_CO2_CO_O2_COMPOSITION)
 
     p = Problem()
     model = p.model = Group()
@@ -256,4 +266,4 @@ if __name__ == "__main__":
     for pair in jac:
         print(pair)
         print(jac[pair])
-        print
+        print()
