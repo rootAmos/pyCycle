@@ -1,7 +1,7 @@
 import warnings
 import os
 import os.path
-import pickle
+import pickle # test
 
 class DeprecatedDict(dict): 
 
