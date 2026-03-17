@@ -4,7 +4,23 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(GIT_COMMITTER_NAME=\"rootAmos\" GIT_COMMITTER_EMAIL=\"a.root.amos@gmail.com\" git commit --amend --no-edit --author=\"rootAmos <a.root.amos@gmail.com>\")",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Read(//c/Users/AlexanderAmos/miniconda3/envs/**)",
+      "Bash(echo $HOME)",
+      "Bash(/c/Users/AlexanderAmos/anaconda3/envs/therm_env/python.exe example_cycles/duality.py)",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle\\\\example_cycles\\\\duality.py\")",
+      "Bash(cmd.exe /c \"cd c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle && C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe example_cycles\\\\duality.py > duality_out.txt 2>&1\")",
+      "Bash(cmd.exe /c \"taskkill /F /IM python.exe 2>nul; exit 0\")",
+      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle && C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe -u example_cycles\\\\duality.py 2>&1\")",
+      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle && C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe -u example_cycles\\\\duality.py > duality_run.log 2>&1\")",
+      "Bash(ls -la \"c:/Users/AlexanderAmos/Documents/thermo/pyCycle/\"*.log)",
+      "Bash(ls -la \"c:/Users/AlexanderAmos/Documents/thermo/pyCycle/\"duality*)",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe -c \"\"import subprocess,sys; r=subprocess.run\\([r''C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe'',r''c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle\\\\example_cycles\\\\duality.py''],capture_output=True,text=True,cwd=r''c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle''\\); open\\(''run.log'',''w''\\).write\\(r.stdout+r.stderr\\)\"\"\")",
+      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\AlexanderAmos\\\\Documents\\\\thermo\\\\pyCycle && C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe run_duality.py\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\AlexanderAmos\\\\anaconda3\\\\envs\\\\therm_env\\\\python.exe -c \"\"open\\(''C:/Users/AlexanderAmos/Documents/thermo/pyCycle/test.log'',''w''\\).write\\(''hello''\\)\"\"\")",
+      "Read(//c//**)",
+      "Bash(\"C:/Users/AlexanderAmos/miniconda3/envs/therm_env/python.exe\":*)",
+      "Bash(C:/Users/AlexanderAmos/miniconda3/envs/therm_env/python.exe:*)"
     ]
   }
 }

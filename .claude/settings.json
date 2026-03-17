@@ -6,7 +6,8 @@
       "Bash(source /c/Users/AlexanderAmos/miniconda3/etc/profile.d/conda.sh)",
       "Bash(conda activate:*)",
       "Bash(python example_cycles/duality.py)",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(python3 example_cycles/duality.py)"
     ]
   }
 }
