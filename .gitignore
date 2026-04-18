@@ -10,3 +10,4 @@ pycycle.egg-info/*
 /build*
 *testflo_report.out
 *.openmdao_out
+om_pycycle.egg-info/

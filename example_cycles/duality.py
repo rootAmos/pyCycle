@@ -292,7 +292,7 @@ class DualityFanOnly(pyc.Cycle):
             #
             # Equation:  perf.Fn  ==  balance.rhs:W
             #   LHS: actual net thrust computed from the cycle (lbf)
-            #   RHS: target thrust (set externally, e.g. 5000 lbf)
+            #   RHS: target thrust (set externally, e.g. ~1100 lbf)
             #   → Newton adjusts W until Fn == target
             balance.add_balance('W', units='lbm/s', eq_units='lbf', val=50.)
             self.connect('balance.W', 'inlet.Fl_I:stat:W')  # W drives mass flow
@@ -305,19 +305,13 @@ class DualityFanOnly(pyc.Cycle):
             self.connect('balance.W',             'inlet.Fl_I:stat:W')
             self.connect('nozz.Throat:stat:area', 'balance.lhs:W')
 
-            # ---- OFF-DESIGN BALANCE 2: N_fan1 — fan1 stays on its operating line ----
-            # Each counter-rotating stage has its own speed balance targeting RlineMap=2.0.
-            # rhs_val=2.0 is hardcoded because it never needs an external connection.
-            balance.add_balance('N_fan1', val=6000., units='rpm',
-                                lower=500., upper=20000., eq_units=None, rhs_val=2.0)
-            self.connect('balance.N_fan1',    'N_fan1')
-            self.connect('fan1.map.RlineMap', 'balance.lhs:N_fan1')
-
-            # ---- OFF-DESIGN BALANCE 3: N_fan2 — fan2 independent operating line ----
-            balance.add_balance('N_fan2', val=6000., units='rpm',
-                                lower=500., upper=20000., eq_units=None, rhs_val=2.0)
-            self.connect('balance.N_fan2',    'N_fan2')
-            self.connect('fan2.map.RlineMap', 'balance.lhs:N_fan2')
+            # ---- OFF-DESIGN BALANCE 2: inlet area — hold a scheduled diffuser exit MN ----
+            balance.add_balance('inlet_area', val=260., units='inch**2',
+                                lower=180., upper=400., eq_units=None)
+            self.connect('balance.inlet_area',   'inlet.area')
+            self.connect('inlet.Fl_O:stat:MN',   'balance.lhs:inlet_area')
+            # Fan speeds are scheduled independently in Mode 1, so off-design
+            # solves only for mass flow against the mode-specific throat area.
 
         # -----------------------------------------------------------------------
         # EXECUTION ORDER & SOLVER
@@ -442,8 +436,9 @@ class DualityFanAB(pyc.Cycle):
             # rhs:FAR = T4 target, connected externally
 
         else:
-            # OD: W locks throat area; N_fan1/N_fan2 lock each fan's operating line;
-            # FAR drives the afterburner to the temperature target.
+            # OD: W locks throat area; inlet area is scheduled within bounds to
+            # hold a realistic diffuser exit Mach; N_fan1/N_fan2 lock each fan's
+            # operating line; FAR drives the afterburner to the temperature target.
 
             # Balance 1: W — nozzle throat area from DESIGN_mode2
             balance.add_balance('W', val=50., units='lbm/s', eq_units='inch**2')
@@ -451,19 +446,25 @@ class DualityFanAB(pyc.Cycle):
             self.connect('nozz.Throat:stat:area', 'balance.lhs:W')
             # rhs:W connected from DESIGN_mode2.nozz.Throat:stat:area in MPDuality
 
-            # Balance 2: N_fan1 — fan1 operating line
+            # Balance 2: inlet area — keep diffuser exit Mach in a plausible range
+            balance.add_balance('inlet_area', val=260., units='inch**2',
+                                lower=180., upper=450., eq_units=None)
+            self.connect('balance.inlet_area', 'inlet.area')
+            self.connect('inlet.Fl_O:stat:MN', 'balance.lhs:inlet_area')
+
+            # Balance 3: N_fan1 — fan1 operating line
             balance.add_balance('N_fan1', val=6000., units='rpm',
                                 lower=500., upper=20000., eq_units=None, rhs_val=2.0)
             self.connect('balance.N_fan1',    'N_fan1')
             self.connect('fan1.map.RlineMap', 'balance.lhs:N_fan1')
 
-            # Balance 3: N_fan2 — fan2 operating line (independent counter-rotating)
+            # Balance 4: N_fan2 — fan2 operating line (independent counter-rotating)
             balance.add_balance('N_fan2', val=6000., units='rpm',
                                 lower=500., upper=20000., eq_units=None, rhs_val=2.0)
             self.connect('balance.N_fan2',    'N_fan2')
             self.connect('fan2.map.RlineMap', 'balance.lhs:N_fan2')
 
-            # Balance 4: FAR — afterburner exit temperature target
+            # Balance 5: FAR — afterburner exit temperature target
             balance.add_balance('FAR', eq_units='degR', lower=1e-4, val=0.017)
             self.connect('balance.FAR',    'ab.Fl_I:FAR')
             self.connect('ab.Fl_O:tot:T', 'balance.lhs:FAR')
@@ -621,11 +622,11 @@ class MPDuality(pyc.MPCycle):
 
     OPERATING POINTS
     ----------------
-    DESIGN   — Mode 1, SLS (M≈0, sea level): sizes the engine.
-                → Finds W and geometry such that Fn = 5000 lbf.
-    OD_mode1 — Mode 1, M=0.5, 30 000 ft:  subsonic cruise fan-only.
-    OD_mode2 — Mode 2, M=0.8, 30 000 ft:  subsonic dash with afterburner.
-    OD_mode3 — Mode 3, M=2.5, 40 000 ft:  supersonic ramjet.
+    DESIGN   — Mode 2, supersonic fan + afterburner cruise: sizes the shared
+                fan-mode hardware and hot nozzle geometry.
+    OD_mode1 — Mode 1 fan-only check.
+    OD_mode2 — Mode 2 fixed-geometry check.
+    OD_mode3 — Mode 3 ramjet check.
 
     DESIGN → OD SCALING
     --------------------
@@ -652,33 +653,32 @@ class MPDuality(pyc.MPCycle):
     def setup(self):
 
         # ====================================================================
-        # DESIGN POINT — Mode 1 fan-only, SLS
+        # DESIGN POINT — Mode 2 fan + afterburner, Concorde-like cruise
         # ====================================================================
         # pyc_add_pnt: registers an operating point within the MPCycle container.
         # ====================================================================
-        # DESIGN_mode1 — fan-only at SLS — sizes ALL fan hardware + Mode 1 nozzle
+        # DESIGN_mode2 — supersonic fan + afterburner cruise — sizes the shared
+        # fan hardware and the Mode 2 nozzle
         # ====================================================================
-        # This is the primary design point.  It determines:
+        # This is the primary design point. It determines:
         #   - All fan duct cross-section areas (inlet, fan1, fan2, ab)
         #   - Fan compressor map scaling factors (s_PR, s_Wc, s_eff, s_Nc)
-        #   - Mode 1 nozzle throat area (used only by OD_mode1)
-        self.pyc_add_pnt('DESIGN_mode1', DualityFanOnly(design=True))
+        #   - Mode 2 nozzle throat area
+        self.pyc_add_pnt('DESIGN_mode2', DualityFanAB(design=True))
 
         # Counter-rotating fan design speeds: both start at 6000 rpm.
         # These are the reference speeds used to compute corrected speed scalars.
-        self.set_input_defaults('DESIGN_mode1.N_fan1', 6000., units='rpm')
-        self.set_input_defaults('DESIGN_mode1.N_fan2', 6000., units='rpm')
+        self.set_input_defaults('DESIGN_mode2.N_fan1', 6000., units='rpm')
+        self.set_input_defaults('DESIGN_mode2.N_fan2', 6000., units='rpm')
         # Internal Mach numbers at each station (determines duct areas)
-        self.set_input_defaults('DESIGN_mode1.inlet.MN', 0.60)
-        self.set_input_defaults('DESIGN_mode1.fan1.MN',  0.45)
-        self.set_input_defaults('DESIGN_mode1.fan2.MN',  0.40)
-        self.set_input_defaults('DESIGN_mode1.ab.MN',    0.38)
-        self.set_input_defaults('DESIGN_mode1.ab.dPqP',  0.01)
+        self.set_input_defaults('DESIGN_mode2.inlet.MN', 0.60)
+        self.set_input_defaults('DESIGN_mode2.fan1.MN',  0.45)
+        self.set_input_defaults('DESIGN_mode2.fan2.MN',  0.40)
+        self.set_input_defaults('DESIGN_mode2.ab.MN',    0.35)
+        self.set_input_defaults('DESIGN_mode2.ab.dPqP',  0.03)
 
-        # NOTE: DESIGN_mode2 and DESIGN_mode3 are run as standalone Problems
-        # in __main__ (pyCycle MPCycle only allows one design=True point).
-        # Their nozzle throat areas are injected via set_val after the main
-        # prob.setup() call.
+        # NOTE: DESIGN_mode3 is still run as a standalone Problem in __main__
+        # because pyCycle MPCycle only allows one design=True point.
 
         # -----------------------------------------------------------------------
         # CYCLE-LEVEL CONSTANTS (broadcast to every point that has these components)
@@ -687,28 +687,28 @@ class MPDuality(pyc.MPCycle):
         self.pyc_add_cycle_param('nozz.Cv',            0.99)
 
         # ====================================================================
-        # OD_mode1 — fan-only, M=0.5, 30 000 ft
+        # OD_mode1 — fan-only, A220-like cruise check
         # ====================================================================
         self.pyc_add_pnt('OD_mode1', DualityFanOnly(design=False))
-        self.set_input_defaults('OD_mode1.fc.MN',  0.50)
-        self.set_input_defaults('OD_mode1.fc.alt', 30000., units='ft')
+        self.set_input_defaults('OD_mode1.fc.MN',  CRUISE_CONDITIONS['mode1']['mach'])
+        self.set_input_defaults('OD_mode1.fc.alt', CRUISE_CONDITIONS['mode1']['alt_ft'], units='ft')
         self.set_input_defaults('OD_mode1.ab.dPqP', 0.01)
 
         # ====================================================================
-        # OD_mode2 — fan+AB, M=0.8, 30 000 ft
+        # OD_mode2 — turbojet / afterburning mode, Concorde-like cruise check
         # ====================================================================
         self.pyc_add_pnt('OD_mode2', DualityFanAB(design=False))
-        self.set_input_defaults('OD_mode2.fc.MN',  0.80)
-        self.set_input_defaults('OD_mode2.fc.alt', 30000., units='ft')
+        self.set_input_defaults('OD_mode2.fc.MN',  CRUISE_CONDITIONS['mode2']['mach'])
+        self.set_input_defaults('OD_mode2.fc.alt', CRUISE_CONDITIONS['mode2']['alt_ft'], units='ft')
         self.set_input_defaults('OD_mode2.balance.rhs:FAR', 3200., units='degR')
         self.set_input_defaults('OD_mode2.ab.dPqP', 0.03)
 
         # ====================================================================
-        # OD_mode3 — ramjet, M=2.5, 40 000 ft
+        # OD_mode3 — ramjet, SR-71-like cruise check
         # ====================================================================
         self.pyc_add_pnt('OD_mode3', DualityRamjet(design=False))
-        self.set_input_defaults('OD_mode3.fc.MN',  2.50)
-        self.set_input_defaults('OD_mode3.fc.alt', 40000., units='ft')
+        self.set_input_defaults('OD_mode3.fc.MN',  CRUISE_CONDITIONS['mode3']['mach'])
+        self.set_input_defaults('OD_mode3.fc.alt', CRUISE_CONDITIONS['mode3']['alt_ft'], units='ft')
         self.set_input_defaults('OD_mode3.balance.rhs:FAR', 3800., units='degR')
         self.set_input_defaults('OD_mode3.bypass_duct.dPqP', 0.01)
         self.set_input_defaults('OD_mode3.combustor.dPqP',   0.03)
@@ -717,33 +717,28 @@ class MPDuality(pyc.MPCycle):
         # DESIGN → OD CONNECTIONS
         # ====================================================================
         #
-        # Fan map scaling factors: ALWAYS from DESIGN_mode1.
-        # These scalars are the same physical hardware for both fan modes.
-        # DESIGN_mode2 computes its own scalars for its own run but we do NOT
-        # pass them to OD_mode2 — OD_mode2 uses the SLS-designed fan map.
+        # Fan map scaling factors for both fan modes come from DESIGN_mode2.
         for pt in ('OD_mode1', 'OD_mode2'):
             for sfx in ('s_PR', 's_Wc', 's_eff', 's_Nc'):
-                self.connect(f'DESIGN_mode1.fan1.{sfx}', f'{pt}.fan1.{sfx}')
-                self.connect(f'DESIGN_mode1.fan2.{sfx}', f'{pt}.fan2.{sfx}')
+                self.connect(f'DESIGN_mode2.fan1.{sfx}', f'{pt}.fan1.{sfx}')
+                self.connect(f'DESIGN_mode2.fan2.{sfx}', f'{pt}.fan2.{sfx}')
 
-        # Fan duct areas: from DESIGN_mode1 (fixed physical hardware).
+        # Fan hardware is shared across both fan modes, but the inlet is
+        # mode-specific and is therefore not connected here.
         for pt in ('OD_mode1', 'OD_mode2'):
-            self.connect('DESIGN_mode1.inlet.Fl_O:stat:area', f'{pt}.inlet.area')
-            self.connect('DESIGN_mode1.fan1.Fl_O:stat:area',  f'{pt}.fan1.area')
-            self.connect('DESIGN_mode1.fan2.Fl_O:stat:area',  f'{pt}.fan2.area')
-            self.connect('DESIGN_mode1.ab.Fl_O:stat:area',    f'{pt}.ab.area')
+            self.connect('DESIGN_mode2.fan1.Fl_O:stat:area',  f'{pt}.fan1.area')
+            self.connect('DESIGN_mode2.fan2.Fl_O:stat:area',  f'{pt}.fan2.area')
+            self.connect('DESIGN_mode2.ab.Fl_O:stat:area',    f'{pt}.ab.area')
 
-        # Mode 1 nozzle area: connected from DESIGN_mode1 (within MPCycle as normal).
-        self.connect('DESIGN_mode1.nozz.Throat:stat:area', 'OD_mode1.balance.rhs:W')
+        # Mode 2 nozzle area is the primary fan+AB throat constraint. Mode 1
+        # gets its own nozzle area via prob.set_val() in __main__.
+        self.connect('DESIGN_mode2.nozz.Throat:stat:area', 'OD_mode2.balance.rhs:W')
 
-        # Mode 2 and Mode 3 nozzle areas: set via prob.set_val() in __main__
-        # after the standalone sizing runs have been completed.
-        # OD_mode2.balance.rhs:W  → standalone DESIGN_mode2 nozzle throat area
-        # OD_mode3.balance.rhs:W  → standalone DESIGN_mode3 nozzle throat area
+        # Mode 3 nozzle area is set via prob.set_val() in __main__ after the
+        # standalone sizing run has been completed.
 
-        # Inlet area for ramjet OD: same physical intake as Mode 1.
-        self.connect('DESIGN_mode1.inlet.Fl_O:stat:area', 'OD_mode3.inlet.area')
-        # bypass_duct and combustor areas for OD_mode3: set from standalone DESIGN_mode3 in __main__.
+        # OD_mode3 inlet / bypass duct / combustor areas are injected from
+        # standalone DESIGN_mode3 in __main__.
 
         super().setup()
 
@@ -778,29 +773,29 @@ def plot_cycle_map(prob):
     # These station paths follow the pattern: '{component}.Fl_O'
     # The pyCycle convention is that every component has a Fl_O (flow outlet) port.
     MODES = {
-        'DESIGN_mode1': {
-            'label': 'DESIGN 1  —  Fan Only (SLS)',
+        'DESIGN_mode2': {
+            'label': 'DESIGN 2  —  Fan + AB  (M 2.02 / 60 kft)',
             'stations': ['fc.Fl_O', 'inlet.Fl_O', 'fan1.Fl_O', 'fan2.Fl_O',
                          'ab.Fl_O', 'nozz.Fl_O'],
             'names':    ['Free-\nstream', 'Inlet\nExit', 'Fan1\nExit',
-                         'Fan2\nExit', 'Duct\nExit', 'Nozzle\nExit'],
+                         'Fan2\nExit', 'AB\nExit', 'Nozzle\nExit'],
         },
         'OD_mode1': {
-            'label': 'OD Mode 1  —  Fan Only  (M 0.5 / 30 kft)',
+            'label': 'OD Mode 1  —  Fan Only  (M 0.78 / 35 kft)',
             'stations': ['fc.Fl_O', 'inlet.Fl_O', 'fan1.Fl_O', 'fan2.Fl_O',
                          'ab.Fl_O', 'nozz.Fl_O'],
             'names':    ['Free-\nstream', 'Inlet\nExit', 'Fan1\nExit',
                          'Fan2\nExit', 'Duct\nExit', 'Nozzle\nExit'],
         },
         'OD_mode2': {
-            'label': 'OD Mode 2  —  Fan + AB  (M 0.8 / 30 kft)',
+            'label': 'OD Mode 2  —  Fan + AB  (M 2.02 / 60 kft)',
             'stations': ['fc.Fl_O', 'inlet.Fl_O', 'fan1.Fl_O', 'fan2.Fl_O',
                          'ab.Fl_O', 'nozz.Fl_O'],
             'names':    ['Free-\nstream', 'Inlet\nExit', 'Fan1\nExit',
                          'Fan2\nExit', 'AB\nExit', 'Nozzle\nExit'],  # 'AB' not 'Duct'
         },
         'OD_mode3': {
-            'label': 'OD Mode 3  —  RamJet  (M 2.5 / 40 kft)',
+            'label': 'OD Mode 3  —  RamJet  (M 3.2 / 80 kft)',
             # Shorter chain: no fan stages
             'stations': ['fc.Fl_O', 'inlet.Fl_O', 'bypass_duct.Fl_O',
                          'combustor.Fl_O', 'nozz.Fl_O'],
@@ -809,13 +804,13 @@ def plot_cycle_map(prob):
         },
     }
 
-    ROW_LABELS = ['Temperature  (K)', 'Pressure  (kPa)', 'Mach Number', 'Area  (m²)']
+    ROW_LABELS = ['Temperature  (°C)', 'Pressure  (kPa)', 'Mach Number', 'Area  (m²)']
 
     # Physical plausibility bounds — if a value falls outside these, the solver
     # likely did not converge at that station.  We NaN those points so they
     # do not corrupt the plot scale.
     PHYS = [
-        (0.,   3500.),   # Temperature (K):  0 to 3500 K (max reasonable for Jet-A combustion)
+        (-273.15,   3226.85),   # Temperature (°C): -273.15 to 3226.85 °C (3500 K upper bound)
         (0.,   3500.),   # Pressure (kPa):   0 to 3500 kPa (well above any expected stagnation)
         (0.,   10.),     # Mach Number:      0 to 10 (comfortably covers hypersonic)
         (0.,   5.),      # Area (m²):        0 to 5 m² (covers large engine flow areas)
@@ -852,9 +847,9 @@ def plot_cycle_map(prob):
 
             # Collect total (stagnation) temperature and pressure,
             # static temperature and pressure, Mach number, and cross-section area.
-            # Units are converted to SI for plotting (K, kPa, m²).
-            Tt.append(_get('tot:T',     units='degK'))    # total temperature  (K)
-            Ts.append(_get('stat:T',    units='degK'))    # static temperature (K)
+            # Units are converted to plotting units (°C, kPa, m²).
+            Tt.append(_get('tot:T',     units='degK') - 273.15)    # total temperature  (°C)
+            Ts.append(_get('stat:T',    units='degK') - 273.15)    # static temperature (°C)
             Pt.append(_get('tot:P',     units='kPa'))     # total pressure     (kPa)
             Ps.append(_get('stat:P',    units='kPa'))     # static pressure    (kPa)
             MN.append(_get('stat:MN'))                    # Mach number        (dimensionless)
@@ -1094,11 +1089,48 @@ def viewer(prob, pt, file=sys.stdout):
 # DESIGN_mode3 are therefore run as standalone om.Problems to compute their
 # nozzle throat areas.  Those areas are then injected into the main MPDuality
 # problem via set_val before run_model().
+#
+# Cruise thrust targets scaled to a PC-24-class 6-passenger jet.
+# Approximation: cruise thrust required scales with weight as W/(L/D).
+PC24_SCALED_THRUST = {
+    'mode1_fan': 1100.0,       # A220-like subsonic transport cruise, L/D ~= 17
+    'mode2_turbojet': 2500.0,  # Concorde-like supersonic turbojet cruise, L/D ~= 7.5
+    'mode3_ramjet': 3100.0,    # SR-71-like high-Mach cruise, L/D ~= 6.0
+}
+
+FAN_RLINE_TARGET = 2.20
+
+CRUISE_CONDITIONS = {
+    'mode1': {  # Subsonic fan-only point
+        'alt_ft': 35000.0,
+        'mach': 0.78,
+        'Pt_psia': 5.169,
+        'Tt_degR': 441.78,
+    },
+    'mode2': {  # Concorde-like supersonic cruise
+        'alt_ft': 60000.0,
+        'mach': 2.02,
+        'Pt_psia': 8.396,
+        'Tt_degR': 708.22,
+    },
+    'mode3': {  # SR-71-like high-Mach cruise
+        'alt_ft': 80000.0,
+        'mach': 3.20,
+        'Pt_psia': 19.800,
+        'Tt_degR': 1212.68,
+    },
+}
+
+
+def _scalar(prob, name, units=None):
+    val = prob.get_val(name, units=units) if units else prob.get_val(name)
+    return float(val[0])
 
 def _run_design_mode2():
     """
     Standalone DualityFanAB(design=True) sizing run at M=0.8, 30 000 ft.
-    Returns the nozzle throat area (inch²) sized for Fn=7000 lbf, T4=3200 R.
+    Returns the nozzle throat area sized for the PC-24-scaled Concorde-like
+    cruise thrust target at T4=3200 R.
     """
     p = om.Problem()
     p.model = DualityFanAB(design=True)
@@ -1120,44 +1152,67 @@ def _run_design_mode2():
     p.set_val('ab.MN',    0.35)
     p.set_val('ab.dPqP',  0.03)
 
-    # Flight condition: M=0.8, 30 000 ft
-    p.set_val('fc.alt', 30000., units='ft')
-    p.set_val('fc.MN',  0.80)
+    # Flight condition: Concorde-like cruise
+    p.set_val('fc.alt', CRUISE_CONDITIONS['mode2']['alt_ft'], units='ft')
+    p.set_val('fc.MN',  CRUISE_CONDITIONS['mode2']['mach'])
 
     # Fan design pressure ratios (same as DESIGN_mode1)
     p.set_val('fan1.PR', 1.50)
     p.set_val('fan2.PR', 1.30)
 
     # Balance targets
-    p.set_val('balance.rhs:W',   7000., units='lbf')   # thrust target
+    p.set_val('balance.rhs:W',   PC24_SCALED_THRUST['mode2_turbojet'], units='lbf')
     p.set_val('balance.rhs:FAR', 3200., units='degR')   # T4 target
 
-    # Initial guesses — ISA 30kft M=0.8: Pt≈6.65 psia, Tt≈464 R
+    # Initial guesses consistent with the chosen cruise condition.
     p['balance.W']   = 40.
     p['balance.FAR'] = 0.025
-    p['fc.balance.Pt'] = 6.65
-    p['fc.balance.Tt'] = 464.
-    p.set_val('inlet.Fl_O:tot:T',  464.,  units='degR')
-    p.set_val('inlet.Fl_O:tot:P',  6.58,  units='lbf/inch**2')
-    p.set_val('fan1.Fl_O:tot:T',   531.,  units='degR')
-    p.set_val('fan1.Fl_O:tot:P',   9.87,  units='lbf/inch**2')
-    p.set_val('fan2.Fl_O:tot:T',   578.,  units='degR')
-    p.set_val('fan2.Fl_O:tot:P',  12.83,  units='lbf/inch**2')
+    p['fc.balance.Pt'] = CRUISE_CONDITIONS['mode2']['Pt_psia']
+    p['fc.balance.Tt'] = CRUISE_CONDITIONS['mode2']['Tt_degR']
+    p.set_val('inlet.Fl_O:tot:T',  CRUISE_CONDITIONS['mode2']['Tt_degR'], units='degR')
+    p.set_val('inlet.Fl_O:tot:P',  8.31,  units='lbf/inch**2')
+    p.set_val('fan1.Fl_O:tot:T',   796.,  units='degR')
+    p.set_val('fan1.Fl_O:tot:P',  12.47,  units='lbf/inch**2')
+    p.set_val('fan2.Fl_O:tot:T',   860.,  units='degR')
+    p.set_val('fan2.Fl_O:tot:P',  16.21,  units='lbf/inch**2')
     p.set_val('ab.Fl_O:tot:T',    3200.,  units='degR')
-    p.set_val('ab.Fl_O:tot:P',    12.44,  units='lbf/inch**2')
+    p.set_val('ab.Fl_O:tot:P',    15.72,  units='lbf/inch**2')
 
     p.run_model()
-    area = p.get_val('nozz.Throat:stat:area', units='inch**2')[0]
-    fn   = p.get_val('perf.Fn')[0]
-    print(f'  DESIGN_mode2 sizing: Fn={fn:.1f} lbf  nozzle throat={area:.3f} inch²')
-    return area
+    result = {
+        'nozz': _scalar(p, 'nozz.Throat:stat:area', units='inch**2'),
+        'inlet_area': _scalar(p, 'inlet.Fl_O:stat:area', units='inch**2'),
+        'fan1_area': _scalar(p, 'fan1.Fl_O:stat:area', units='inch**2'),
+        'fan2_area': _scalar(p, 'fan2.Fl_O:stat:area', units='inch**2'),
+        'ab_area': _scalar(p, 'ab.Fl_O:stat:area', units='inch**2'),
+        'W': _scalar(p, 'balance.W'),
+        'FAR': _scalar(p, 'balance.FAR'),
+        'Pt': _scalar(p, 'fc.balance.Pt'),
+        'Tt': _scalar(p, 'fc.balance.Tt'),
+        'inlet_Tt': _scalar(p, 'inlet.Fl_O:tot:T', units='degR'),
+        'inlet_Pt': _scalar(p, 'inlet.Fl_O:tot:P', units='lbf/inch**2'),
+        'fan1_Tt': _scalar(p, 'fan1.Fl_O:tot:T', units='degR'),
+        'fan1_Pt': _scalar(p, 'fan1.Fl_O:tot:P', units='lbf/inch**2'),
+        'fan2_Tt': _scalar(p, 'fan2.Fl_O:tot:T', units='degR'),
+        'fan2_Pt': _scalar(p, 'fan2.Fl_O:tot:P', units='lbf/inch**2'),
+        'ab_Tt': _scalar(p, 'ab.Fl_O:tot:T', units='degR'),
+        'ab_Pt': _scalar(p, 'ab.Fl_O:tot:P', units='lbf/inch**2'),
+    }
+    for sfx in ('s_PR', 's_Wc', 's_eff', 's_Nc'):
+        result[f'fan1_{sfx}'] = _scalar(p, f'fan1.{sfx}')
+        result[f'fan2_{sfx}'] = _scalar(p, f'fan2.{sfx}')
+
+    fn = _scalar(p, 'perf.Fn')
+    print(f"  DESIGN_mode2 sizing: Fn={fn:.1f} lbf  nozzle throat={result['nozz']:.3f} inch²")
+    return result
 
 
 def _run_design_mode3():
     """
     Standalone DualityRamjet(design=True) sizing run at M=2.5, 40 000 ft.
-    Returns a dict with nozzle throat area, bypass_duct area, and combustor area (inch²),
-    sized for Fn=6000 lbf, T4=3800 R.
+    Returns a dict with nozzle throat area, inlet area, bypass_duct area,
+    and combustor area (inch²),
+    sized for the PC-24-scaled SR-71-like cruise thrust target at T4=3800 R.
     """
     p = om.Problem()
     p.model = DualityRamjet(design=True)
@@ -1173,32 +1228,46 @@ def _run_design_mode3():
     p.set_val('bypass_duct.dPqP', 0.01)
     p.set_val('combustor.dPqP',   0.03)
 
-    p.set_val('fc.alt', 40000., units='ft')
-    p.set_val('fc.MN',  2.50)
+    p.set_val('fc.alt', CRUISE_CONDITIONS['mode3']['alt_ft'], units='ft')
+    p.set_val('fc.MN',  CRUISE_CONDITIONS['mode3']['mach'])
 
-    p.set_val('balance.rhs:W',   6000., units='lbf')
+    p.set_val('balance.rhs:W',   PC24_SCALED_THRUST['mode3_ramjet'], units='lbf')
     p.set_val('balance.rhs:FAR', 3800., units='degR')
 
-    # ISA 40kft M=2.5: Pt≈46.3 psia, Tt≈846 R
+    # Initial guesses consistent with the chosen cruise condition.
     p['balance.W']   = 80.
     p['balance.FAR'] = 0.04
-    p['fc.balance.Pt'] = 46.3
-    p['fc.balance.Tt'] = 846.
-    p.set_val('inlet.Fl_O:tot:T',       846.,  units='degR')
-    p.set_val('inlet.Fl_O:tot:P',        45.8, units='lbf/inch**2')
-    p.set_val('bypass_duct.Fl_O:tot:T',  846.,  units='degR')
-    p.set_val('bypass_duct.Fl_O:tot:P',  45.3, units='lbf/inch**2')
+    p['fc.balance.Pt'] = CRUISE_CONDITIONS['mode3']['Pt_psia']
+    p['fc.balance.Tt'] = CRUISE_CONDITIONS['mode3']['Tt_degR']
+    p.set_val('inlet.Fl_O:tot:T',       CRUISE_CONDITIONS['mode3']['Tt_degR'], units='degR')
+    p.set_val('inlet.Fl_O:tot:P',       19.60, units='lbf/inch**2')
+    p.set_val('bypass_duct.Fl_O:tot:T', CRUISE_CONDITIONS['mode3']['Tt_degR'], units='degR')
+    p.set_val('bypass_duct.Fl_O:tot:P', 19.40, units='lbf/inch**2')
     p.set_val('combustor.Fl_O:tot:T',   3800.,  units='degR')
-    p.set_val('combustor.Fl_O:tot:P',    43.9, units='lbf/inch**2')
+    p.set_val('combustor.Fl_O:tot:P',   18.82, units='lbf/inch**2')
 
     p.run_model()
-    nozz_area    = p.get_val('nozz.Throat:stat:area',        units='inch**2')[0]
-    bypass_area  = p.get_val('bypass_duct.Fl_O:stat:area',   units='inch**2')[0]
-    combust_area = p.get_val('combustor.Fl_O:stat:area',     units='inch**2')[0]
-    fn           = p.get_val('perf.Fn')[0]
-    print(f'  DESIGN_mode3 sizing: Fn={fn:.1f} lbf  nozzle throat={nozz_area:.3f} inch²'
-          f'  bypass={bypass_area:.1f} in²  combustor={combust_area:.1f} in²')
-    return {'nozz': nozz_area, 'bypass_duct': bypass_area, 'combustor': combust_area}
+    result = {
+        'nozz': _scalar(p, 'nozz.Throat:stat:area', units='inch**2'),
+        'inlet_area': _scalar(p, 'inlet.Fl_O:stat:area', units='inch**2'),
+        'bypass_duct': _scalar(p, 'bypass_duct.Fl_O:stat:area', units='inch**2'),
+        'combustor': _scalar(p, 'combustor.Fl_O:stat:area', units='inch**2'),
+        'W': _scalar(p, 'balance.W'),
+        'FAR': _scalar(p, 'balance.FAR'),
+        'Pt': _scalar(p, 'fc.balance.Pt'),
+        'Tt': _scalar(p, 'fc.balance.Tt'),
+        'inlet_Tt': _scalar(p, 'inlet.Fl_O:tot:T', units='degR'),
+        'inlet_Pt': _scalar(p, 'inlet.Fl_O:tot:P', units='lbf/inch**2'),
+        'bypass_Tt': _scalar(p, 'bypass_duct.Fl_O:tot:T', units='degR'),
+        'bypass_Pt': _scalar(p, 'bypass_duct.Fl_O:tot:P', units='lbf/inch**2'),
+        'combustor_Tt': _scalar(p, 'combustor.Fl_O:tot:T', units='degR'),
+        'combustor_Pt': _scalar(p, 'combustor.Fl_O:tot:P', units='lbf/inch**2'),
+    }
+    fn = _scalar(p, 'perf.Fn')
+    print(f"  DESIGN_mode3 sizing: Fn={fn:.1f} lbf  nozzle throat={result['nozz']:.3f} inch²"
+          f"  inlet={result['inlet_area']:.1f} in²  bypass={result['bypass_duct']:.1f} in²"
+          f"  combustor={result['combustor']:.1f} in²")
+    return result
 
 
 # ============================================================================
@@ -1209,18 +1278,15 @@ if __name__ == '__main__':
     import time
 
     # -----------------------------------------------------------------------
-    # STEP 1: standalone nozzle sizing for Mode 2 and Mode 3
+    # STEP 1: standalone sizing for Mode 3
     # -----------------------------------------------------------------------
-    # These runs find the nozzle throat area that satisfies the thrust + T4
-    # targets for each mode's flight condition.  The resulting areas define
-    # the variable-area nozzle settings for each mode.
-    print('\n--- Standalone sizing: DESIGN_mode2 ---')
-    nozz_area_mode2 = _run_design_mode2()
-
+    # Mode 2 is now the primary design=True point inside MPDuality. Only the
+    # ramjet geometry still needs a separate standalone sizing run.
     print('\n--- Standalone sizing: DESIGN_mode3 ---')
     d3 = _run_design_mode3()
-    nozz_area_mode3   = d3['nozz']
-    bypass_area_mode3 = d3['bypass_duct']
+    nozz_area_mode3    = d3['nozz']
+    inlet_area_mode3   = d3['inlet_area']
+    bypass_area_mode3  = d3['bypass_duct']
     combust_area_mode3 = d3['combustor']
 
     # -----------------------------------------------------------------------
@@ -1231,83 +1297,96 @@ if __name__ == '__main__':
     prob.setup()                    # triggers setup() on all subsystems recursively
 
     # -----------------------------------------------------------------------
-    # DESIGN_mode1 — SLS, fan-only, Fn = 5000 lbf
+    # DESIGN_mode2 — Concorde-like supersonic fan + afterburner cruise.
+    # This is the primary sizing point for the multi-point model.
     # -----------------------------------------------------------------------
-    prob.set_val('DESIGN_mode1.fc.alt',        0.0,    units='ft')
-    prob.set_val('DESIGN_mode1.fc.MN',         0.000001)           # SLS (avoid divide-by-zero at MN=0)
-    prob.set_val('DESIGN_mode1.balance.rhs:W', 5000.,  units='lbf')
-    prob.set_val('DESIGN_mode1.fan1.PR',       1.50)
-    prob.set_val('DESIGN_mode1.fan2.PR',       1.30)
-    prob['DESIGN_mode1.balance.W']     = 120.0
-    prob['DESIGN_mode1.fc.balance.Pt'] = 14.696   # SLS ISA: 1 atm
-    prob['DESIGN_mode1.fc.balance.Tt'] = 518.67   # SLS ISA: 288.15 K
+    prob.set_val('DESIGN_mode2.fc.alt',        CRUISE_CONDITIONS['mode2']['alt_ft'], units='ft')
+    prob.set_val('DESIGN_mode2.fc.MN',         CRUISE_CONDITIONS['mode2']['mach'])
+    prob.set_val('DESIGN_mode2.balance.rhs:W', PC24_SCALED_THRUST['mode2_turbojet'], units='lbf')
+    prob.set_val('DESIGN_mode2.balance.rhs:FAR', 3200., units='degR')
+    prob.set_val('DESIGN_mode2.fan1.PR',       1.50)
+    prob.set_val('DESIGN_mode2.fan2.PR',       1.30)
+    prob['DESIGN_mode2.balance.W']       = 35.0
+    prob['DESIGN_mode2.balance.FAR']     = 0.035
+    prob['DESIGN_mode2.fc.balance.Pt']   = CRUISE_CONDITIONS['mode2']['Pt_psia']
+    prob['DESIGN_mode2.fc.balance.Tt']   = CRUISE_CONDITIONS['mode2']['Tt_degR']
+    prob.set_val('DESIGN_mode2.inlet.Fl_O:tot:T', CRUISE_CONDITIONS['mode2']['Tt_degR'], units='degR')
+    prob.set_val('DESIGN_mode2.inlet.Fl_O:tot:P', 8.31, units='lbf/inch**2')
+    prob.set_val('DESIGN_mode2.fan1.Fl_O:tot:T',  796., units='degR')
+    prob.set_val('DESIGN_mode2.fan1.Fl_O:tot:P',  12.47, units='lbf/inch**2')
+    prob.set_val('DESIGN_mode2.fan2.Fl_O:tot:T',  860., units='degR')
+    prob.set_val('DESIGN_mode2.fan2.Fl_O:tot:P',  16.21, units='lbf/inch**2')
+    prob.set_val('DESIGN_mode2.ab.Fl_O:tot:T',    3200., units='degR')
+    prob.set_val('DESIGN_mode2.ab.Fl_O:tot:P',    15.72, units='lbf/inch**2')
 
     # -----------------------------------------------------------------------
     # Inject variable-area nozzle throat areas from standalone sizing runs.
     # These are the RHS of the W balance in each OD point — the physical
     # throat constraint.  Must be set AFTER prob.setup() and BEFORE run_model().
     # -----------------------------------------------------------------------
-    prob.set_val('OD_mode2.balance.rhs:W', nozz_area_mode2,    units='inch**2')
-    prob.set_val('OD_mode3.balance.rhs:W', nozz_area_mode3,    units='inch**2')
+    prob.set_val('OD_mode1.balance.rhs:W', 118.000, units='inch**2')
+    prob.set_val('OD_mode3.balance.rhs:W', nozz_area_mode3,  units='inch**2')
+    prob.set_val('OD_mode1.balance.rhs:inlet_area', 0.55)
+    prob.set_val('OD_mode2.balance.rhs:inlet_area', 0.60)
+    prob.set_val('OD_mode2.balance.rhs:N_fan1', FAN_RLINE_TARGET)
+    prob.set_val('OD_mode2.balance.rhs:N_fan2', FAN_RLINE_TARGET)
 
-    # Inject bypass_duct and combustor cross-section areas for OD_mode3.
-    # These are the DESIGN_mode3 exit areas at the specified station MN values.
-    # pyCycle uses these in OD to compute static conditions at fixed geometry.
+    # Inject Mode 3 cross-section areas from the standalone Blackbird-like
+    # ramjet sizing run.
+    prob.set_val('OD_mode3.inlet.area',          inlet_area_mode3,   units='inch**2')
     prob.set_val('OD_mode3.bypass_duct.area', bypass_area_mode3,  units='inch**2')
     prob.set_val('OD_mode3.combustor.area',   combust_area_mode3, units='inch**2')
 
     # -----------------------------------------------------------------------
-    # OD_mode1 — M=0.5, 30 000 ft, fan-only
-    # ISA 30kft M=0.5: Pt ≈ 5.19 psia, Tt ≈ 432 R
+    # OD_mode1 — A220-like cruise fan-only check
     # -----------------------------------------------------------------------
-    prob['OD_mode1.balance.W']      = 50.
-    prob['OD_mode1.balance.N_fan1'] = 5800.
-    prob['OD_mode1.balance.N_fan2'] = 5800.
-    prob['OD_mode1.fc.balance.Pt']  = 5.19
-    prob['OD_mode1.fc.balance.Tt']  = 432.
-    prob.set_val('OD_mode1.inlet.Fl_O:tot:T',  432.,  units='degR')
-    prob.set_val('OD_mode1.inlet.Fl_O:tot:P',  5.13,  units='lbf/inch**2')
-    prob.set_val('OD_mode1.fan1.Fl_O:tot:T',   494.,  units='degR')
-    prob.set_val('OD_mode1.fan1.Fl_O:tot:P',   7.70,  units='lbf/inch**2')
-    prob.set_val('OD_mode1.fan2.Fl_O:tot:T',   538.,  units='degR')
-    prob.set_val('OD_mode1.fan2.Fl_O:tot:P',  10.00,  units='lbf/inch**2')
-    prob.set_val('OD_mode1.ab.Fl_O:tot:T',     538.,  units='degR')
-    prob.set_val('OD_mode1.ab.Fl_O:tot:P',      9.90, units='lbf/inch**2')
+    prob['OD_mode1.balance.W']      = 27.
+    prob['OD_mode1.balance.inlet_area'] = 260.
+    prob.set_val('OD_mode1.N_fan1', 5135., units='rpm')
+    prob.set_val('OD_mode1.N_fan2', 4847., units='rpm')
+    prob['OD_mode1.fc.balance.Pt']  = CRUISE_CONDITIONS['mode1']['Pt_psia']
+    prob['OD_mode1.fc.balance.Tt']  = CRUISE_CONDITIONS['mode1']['Tt_degR']
+    prob.set_val('OD_mode1.inlet.Fl_O:tot:T',  CRUISE_CONDITIONS['mode1']['Tt_degR'], units='degR')
+    prob.set_val('OD_mode1.inlet.Fl_O:tot:P',  5.12, units='lbf/inch**2')
+    prob.set_val('OD_mode1.fan1.Fl_O:tot:T',   500., units='degR')
+    prob.set_val('OD_mode1.fan1.Fl_O:tot:P',   7.68, units='lbf/inch**2')
+    prob.set_val('OD_mode1.fan2.Fl_O:tot:T',   539., units='degR')
+    prob.set_val('OD_mode1.fan2.Fl_O:tot:P',   9.98, units='lbf/inch**2')
+    prob.set_val('OD_mode1.ab.Fl_O:tot:T',     539., units='degR')
+    prob.set_val('OD_mode1.ab.Fl_O:tot:P',     9.88, units='lbf/inch**2')
 
     # -----------------------------------------------------------------------
-    # OD_mode2 — M=0.8, 30 000 ft, fan+AB
-    # Nozzle throat area now comes from DESIGN_mode2 (hot-flow sized).
-    # W guess derived from DESIGN_mode2 expected result (~40 lbm/s).
+    # OD_mode2 — Concorde-like cruise turbojet / AB check
     # -----------------------------------------------------------------------
-    prob['OD_mode2.balance.W']      = 40.
-    prob['OD_mode2.balance.FAR']    = 0.025
-    prob['OD_mode2.balance.N_fan1'] = 5800.
-    prob['OD_mode2.balance.N_fan2'] = 5800.
-    prob['OD_mode2.fc.balance.Pt']  = 6.65
-    prob['OD_mode2.fc.balance.Tt']  = 464.
-    prob.set_val('OD_mode2.inlet.Fl_O:tot:T',  464.,  units='degR')
-    prob.set_val('OD_mode2.inlet.Fl_O:tot:P',  6.58,  units='lbf/inch**2')
-    prob.set_val('OD_mode2.fan1.Fl_O:tot:T',   531.,  units='degR')
-    prob.set_val('OD_mode2.fan1.Fl_O:tot:P',   9.87,  units='lbf/inch**2')
-    prob.set_val('OD_mode2.fan2.Fl_O:tot:T',   578.,  units='degR')
-    prob.set_val('OD_mode2.fan2.Fl_O:tot:P',  12.83,  units='lbf/inch**2')
-    prob.set_val('OD_mode2.ab.Fl_O:tot:T',    3200.,  units='degR')
-    prob.set_val('OD_mode2.ab.Fl_O:tot:P',    12.44,  units='lbf/inch**2')
+    prob['OD_mode2.balance.W']      = 35.
+    prob['OD_mode2.balance.inlet_area'] = 260.
+    prob['OD_mode2.balance.FAR']    = 0.035
+    prob['OD_mode2.balance.N_fan1'] = 6000.
+    prob['OD_mode2.balance.N_fan2'] = 6000.
+    prob['OD_mode2.fc.balance.Pt']  = CRUISE_CONDITIONS['mode2']['Pt_psia']
+    prob['OD_mode2.fc.balance.Tt']  = CRUISE_CONDITIONS['mode2']['Tt_degR']
+    prob.set_val('OD_mode2.inlet.Fl_O:tot:T',  CRUISE_CONDITIONS['mode2']['Tt_degR'], units='degR')
+    prob.set_val('OD_mode2.inlet.Fl_O:tot:P',  8.31, units='lbf/inch**2')
+    prob.set_val('OD_mode2.fan1.Fl_O:tot:T',   796., units='degR')
+    prob.set_val('OD_mode2.fan1.Fl_O:tot:P',   12.47, units='lbf/inch**2')
+    prob.set_val('OD_mode2.fan2.Fl_O:tot:T',   860., units='degR')
+    prob.set_val('OD_mode2.fan2.Fl_O:tot:P',   16.21, units='lbf/inch**2')
+    prob.set_val('OD_mode2.ab.Fl_O:tot:T',     3200., units='degR')
+    prob.set_val('OD_mode2.ab.Fl_O:tot:P',     15.72, units='lbf/inch**2')
 
     # -----------------------------------------------------------------------
-    # OD_mode3 — M=2.5, 40 000 ft, ramjet
-    # bypass_duct and combustor areas now connected from DESIGN_mode3 (no guesses needed).
+    # OD_mode3 — SR-71-like cruise ramjet check
     # -----------------------------------------------------------------------
-    prob['OD_mode3.balance.W']   = 80.
-    prob['OD_mode3.balance.FAR'] = 0.04
-    prob['OD_mode3.fc.balance.Pt'] = 46.3
-    prob['OD_mode3.fc.balance.Tt'] = 846.
-    prob.set_val('OD_mode3.inlet.Fl_O:tot:T',       846.,  units='degR')
-    prob.set_val('OD_mode3.inlet.Fl_O:tot:P',        45.8, units='lbf/inch**2')
-    prob.set_val('OD_mode3.bypass_duct.Fl_O:tot:T',  846.,  units='degR')
-    prob.set_val('OD_mode3.bypass_duct.Fl_O:tot:P',  45.3, units='lbf/inch**2')
-    prob.set_val('OD_mode3.combustor.Fl_O:tot:T',   3800.,  units='degR')
-    prob.set_val('OD_mode3.combustor.Fl_O:tot:P',    43.9, units='lbf/inch**2')
+    prob['OD_mode3.balance.W']     = d3['W']
+    prob['OD_mode3.balance.FAR']   = d3['FAR']
+    prob['OD_mode3.fc.balance.Pt'] = d3['Pt']
+    prob['OD_mode3.fc.balance.Tt'] = d3['Tt']
+    prob.set_val('OD_mode3.inlet.Fl_O:tot:T',       d3['inlet_Tt'], units='degR')
+    prob.set_val('OD_mode3.inlet.Fl_O:tot:P',       d3['inlet_Pt'], units='lbf/inch**2')
+    prob.set_val('OD_mode3.bypass_duct.Fl_O:tot:T', d3['bypass_Tt'], units='degR')
+    prob.set_val('OD_mode3.bypass_duct.Fl_O:tot:P', d3['bypass_Pt'], units='lbf/inch**2')
+    prob.set_val('OD_mode3.combustor.Fl_O:tot:T',   d3['combustor_Tt'], units='degR')
+    prob.set_val('OD_mode3.combustor.Fl_O:tot:P',   d3['combustor_Pt'], units='lbf/inch**2')
 
     prob.set_solver_print(level=-1)
     prob.set_solver_print(level=2, depth=1)
@@ -1316,7 +1395,7 @@ if __name__ == '__main__':
     prob.run_model()
     print(f'\nTotal run time: {time.time()-t0:.1f} s')
 
-    for pt in ['DESIGN_mode1', 'OD_mode1', 'OD_mode2', 'OD_mode3']:
+    for pt in ['DESIGN_mode2', 'OD_mode1', 'OD_mode2', 'OD_mode3']:
         viewer(prob, pt)
 
     plot_cycle_map(prob)
