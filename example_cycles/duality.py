@@ -972,6 +972,103 @@ def plot_cycle_map(prob):
     print(f'\nCycle map saved -> {out}')
 
 
+def write_station_geometry_report(prob, out='duality_station_geometry.txt',
+                                  inlet_fixed_width=30.0):
+    """
+    Write a text report of station order and approximate station dimensions.
+
+    The cycle model solves flow station area, but it does not define a physical
+    2-D nacelle layout.  For this report, x is the ordered station index along
+    the gas path.  Variable inlet stations are represented as fixed-width
+    rectangular slots:
+
+        height = area / inlet_fixed_width
+
+    Other stations still use circular-equivalent dimensions:
+
+        D_eq = sqrt(4 * area / pi)
+    """
+    import math
+
+    modes = {
+        'DESIGN_mode2': {
+            'label': 'Design Mode 2 - Fan + AB',
+            'stations': [
+                ('inlet.Fl_O', 'Inlet Exit'),
+                ('fan1.Fl_O', 'Fan1 Exit'),
+                ('fan2.Fl_O', 'Fan2 Exit'),
+                ('ab.Fl_O', 'Afterburner Exit'),
+                ('nozz.Throat', 'Nozzle Throat'),
+                ('nozz.Fl_O', 'Nozzle Exit'),
+            ],
+        },
+        'OD_mode1': {
+            'label': 'Off-Design Mode 1 - Fan Only',
+            'stations': [
+                ('inlet.Fl_O', 'Inlet Exit'),
+                ('fan1.Fl_O', 'Fan1 Exit'),
+                ('fan2.Fl_O', 'Fan2 Exit'),
+                ('ab.Fl_O', 'Duct Exit'),
+                ('nozz.Throat', 'Nozzle Throat'),
+                ('nozz.Fl_O', 'Nozzle Exit'),
+            ],
+        },
+        'OD_mode2': {
+            'label': 'Off-Design Mode 2 - Fan + AB',
+            'stations': [
+                ('inlet.Fl_O', 'Inlet Exit'),
+                ('fan1.Fl_O', 'Fan1 Exit'),
+                ('fan2.Fl_O', 'Fan2 Exit'),
+                ('ab.Fl_O', 'Afterburner Exit'),
+                ('nozz.Throat', 'Nozzle Throat'),
+                ('nozz.Fl_O', 'Nozzle Exit'),
+            ],
+        },
+        'OD_mode3': {
+            'label': 'Off-Design Mode 3 - Ramjet',
+            'stations': [
+                ('inlet.Fl_O', 'Inlet Exit'),
+                ('bypass_duct.Fl_O', 'Bypass Duct Exit'),
+                ('combustor.Fl_O', 'Combustor Exit'),
+                ('nozz.Throat', 'Nozzle Throat'),
+                ('nozz.Fl_O', 'Nozzle Exit'),
+            ],
+        },
+    }
+
+    def _area_in2(pt, station):
+        try:
+            return _scalar(prob, f'{pt}.{station}:stat:area', units='inch**2')
+        except Exception:
+            return float('nan')
+
+    def _dims_in(area, station):
+        diam = math.sqrt(4.0 * area / math.pi) if math.isfinite(area) and area >= 0.0 else float('nan')
+        if station == 'inlet.Fl_O' and math.isfinite(area) and inlet_fixed_width > 0.0:
+            return area / inlet_fixed_width, inlet_fixed_width, diam
+        return diam, diam, diam
+
+    with open(out, 'w') as f:
+        print('Duality Engine Station Geometry', file=f)
+        print('Units: x = station index from inlet to exhaust; area in inch^2; dimensions in inches', file=f)
+        print('Note: pyCycle solves cross-sectional area, not physical height/width.', file=f)
+        print(f'      Inlet rows use fixed width = {inlet_fixed_width:.3f} in and height = A/width.', file=f)
+        print('      Non-inlet rows use circular-equivalent diameters: D_eq = sqrt(4A/pi).', file=f)
+
+        for pt, cfg in modes.items():
+            print('\n' + cfg['label'] + f' ({pt})', file=f)
+            print('-' * 98, file=f)
+            print(f'{"x":>6}  {"station":<28}  {"path":<26}  {"area":>12}  {"height":>12}  {"width":>12}  {"eq_diam":>12}', file=f)
+            print('-' * 98, file=f)
+
+            for idx, (station, name) in enumerate(cfg['stations']):
+                area = _area_in2(pt, station)
+                height, width, diam = _dims_in(area, station)
+                print(f'{idx:6.1f}  {name:<28}  {station:<26}  {area:12.3f}  {height:12.3f}  {width:12.3f}  {diam:12.3f}', file=f)
+
+    print(f'Station geometry report saved -> {out}')
+
+
 # ============================================================================
 # Results viewer (console summary)
 # ============================================================================
@@ -1398,4 +1495,5 @@ if __name__ == '__main__':
     for pt in ['DESIGN_mode2', 'OD_mode1', 'OD_mode2', 'OD_mode3']:
         viewer(prob, pt)
 
+    write_station_geometry_report(prob)
     plot_cycle_map(prob)

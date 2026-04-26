@@ -1,0 +1,48 @@
+Duality Engine Station Geometry
+Units: x = station index from inlet to exhaust; area in inch^2; dimensions in inches
+Note: pyCycle solves cross-sectional area, not physical height/width.
+      Inlet rows use fixed width = 30.000 in and height = A/width.
+      Non-inlet rows use circular-equivalent diameters: D_eq = sqrt(4A/pi).
+
+Design Mode 2 - Fan + AB (DESIGN_mode2)
+--------------------------------------------------------------------------------------------------
+     x  station                       path                                area        height         width       eq_diam
+--------------------------------------------------------------------------------------------------
+   0.0  Inlet Exit                    inlet.Fl_O                       242.646         8.088        30.000        17.577
+   1.0  Fan1 Exit                     fan1.Fl_O                        209.229        16.322        16.322        16.322
+   2.0  Fan2 Exit                     fan2.Fl_O                        183.549        15.287        15.287        15.287
+   3.0  Afterburner Exit              ab.Fl_O                          442.966        23.749        23.749        23.749
+   4.0  Nozzle Throat                 nozz.Throat                      246.001        17.698        17.698        17.698
+   5.0  Nozzle Exit                   nozz.Fl_O                        246.001        17.698        17.698        17.698
+
+Off-Design Mode 1 - Fan Only (OD_mode1)
+--------------------------------------------------------------------------------------------------
+     x  station                       path                                area        height         width       eq_diam
+--------------------------------------------------------------------------------------------------
+   0.0  Inlet Exit                    inlet.Fl_O                       262.752         8.758        30.000        18.291
+   1.0  Fan1 Exit                     fan1.Fl_O                        209.229        16.322        16.322        16.322
+   2.0  Fan2 Exit                     fan2.Fl_O                        183.549        15.287        15.287        15.287
+   3.0  Duct Exit                     ab.Fl_O                          442.966        23.749        23.749        23.749
+   4.0  Nozzle Throat                 nozz.Throat                      118.000        12.257        12.257        12.257
+   5.0  Nozzle Exit                   nozz.Fl_O                        118.000        12.257        12.257        12.257
+
+Off-Design Mode 2 - Fan + AB (OD_mode2)
+--------------------------------------------------------------------------------------------------
+     x  station                       path                                area        height         width       eq_diam
+--------------------------------------------------------------------------------------------------
+   0.0  Inlet Exit                    inlet.Fl_O                       242.646         8.088        30.000        17.577
+   1.0  Fan1 Exit                     fan1.Fl_O                        209.229        16.322        16.322        16.322
+   2.0  Fan2 Exit                     fan2.Fl_O                        183.549        15.287        15.287        15.287
+   3.0  Afterburner Exit              ab.Fl_O                          442.966        23.749        23.749        23.749
+   4.0  Nozzle Throat                 nozz.Throat                      246.001        17.698        17.698        17.698
+   5.0  Nozzle Exit                   nozz.Fl_O                        246.001        17.698        17.698        17.698
+
+Off-Design Mode 3 - Ramjet (OD_mode3)
+--------------------------------------------------------------------------------------------------
+     x  station                       path                                area        height         width       eq_diam
+--------------------------------------------------------------------------------------------------
+   0.0  Inlet Exit                    inlet.Fl_O                       536.050        17.868        30.000        26.125
+   1.0  Bypass Duct Exit              bypass_duct.Fl_O                 714.613        30.164        30.164        30.164
+   2.0  Combustor Exit                combustor.Fl_O                   886.084        33.589        33.589        33.589
+   3.0  Nozzle Throat                 nozz.Throat                      361.722        21.461        21.461        21.461
+   4.0  Nozzle Exit                   nozz.Fl_O                        361.722        21.461        21.461        21.461
