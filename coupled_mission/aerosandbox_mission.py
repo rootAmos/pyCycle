@@ -16,6 +16,10 @@ import importlib.util
 
 try:
     from .tank_deck import TankCase, write_tank_deck
+    from sizing.electric_machines import (
+        ElectricMachineMap,
+        duality_electric_powertrain,
+    )
 except ImportError:  # Allows `python coupled_mission/aerosandbox_mission.py`.
     import sys
 
@@ -23,6 +27,10 @@ except ImportError:  # Allows `python coupled_mission/aerosandbox_mission.py`.
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     from coupled_mission.tank_deck import TankCase, write_tank_deck
+    from sizing.electric_machines import (
+        ElectricMachineMap,
+        duality_electric_powertrain,
+    )
 
 
 @dataclass
@@ -573,12 +581,37 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
     elif mode == "ramjet":
         fuel_flow = _scalar(prob, f"{point_name}.combustor.Wfuel", units="lbm/s") * lbm_to_kg
 
+    fan1_shaft_power_W = 0.0
+    fan2_shaft_power_W = 0.0
     electric_power = 0.0
+    generator_shaft_power_W = 0.0
     if mode in {"fan", "fan_ab"}:
-        electric_power = (
-            abs(_scalar(prob, f"{point_name}.fan1.power", units="hp"))
-            + abs(_scalar(prob, f"{point_name}.fan2.power", units="hp"))
-        ) * hp_to_W
+        fan1_shaft_power_W = abs(_scalar(prob, f"{point_name}.fan1.power", units="hp")) * hp_to_W
+        fan2_shaft_power_W = abs(_scalar(prob, f"{point_name}.fan2.power", units="hp")) * hp_to_W
+        motor_map = ElectricMachineMap(
+            peak_speed_rad_s=6000.0 * 2.0 * 3.141592653589793 / 60.0,
+            peak_torque_N_m=250.0,
+            peak_efficiency=0.96,
+            parasite_loss_ratio=0.35,
+        )
+        generator_map = ElectricMachineMap(
+            peak_speed_rad_s=12000.0 * 2.0 * 3.141592653589793 / 60.0,
+            peak_torque_N_m=150.0,
+            peak_efficiency=0.965,
+            parasite_loss_ratio=0.30,
+        )
+        powertrain = duality_electric_powertrain(
+            fan1_shaft_power_W=fan1_shaft_power_W,
+            fan2_shaft_power_W=fan2_shaft_power_W,
+            fan1_speed_rpm=abs(_scalar(prob, f"{point_name}.N_fan1", units="rpm")),
+            fan2_speed_rpm=abs(_scalar(prob, f"{point_name}.N_fan2", units="rpm")),
+            motor_map=motor_map,
+            generator_map=generator_map,
+            generator_speed_rpm=12000.0,
+            number_engines=2,
+        )
+        electric_power = powertrain["per_engine_motor_electric_W"]
+        generator_shaft_power_W = powertrain["per_engine_generator_shaft_W"]
 
     return {
         "mode": mode,
@@ -588,6 +621,9 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
         "thrust_N": _scalar(prob, f"{point_name}.perf.Fn", units="N"),
         "fuel_flow_kg_s": fuel_flow,
         "electric_power_W": electric_power,
+        "fan1_shaft_power_W": fan1_shaft_power_W,
+        "fan2_shaft_power_W": fan2_shaft_power_W,
+        "generator_shaft_power_W": generator_shaft_power_W,
         "inlet_area_m2": _scalar(prob, f"{point_name}.inlet.Fl_O:stat:area", units="m**2"),
         "nozzle_throat_area_m2": _scalar(prob, f"{point_name}.nozz.Throat:stat:area", units="m**2"),
     }
@@ -664,6 +700,9 @@ def _expanded_engine_rows_from_baselines(baselines, altitudes_ft, mach_values):
         thrust = baseline["thrust_N"] * density_lapse * mach_lapse * mode_factor
         fuel_flow = baseline["fuel_flow_kg_s"] * np.maximum(density_lapse, 0.15) * mach_lapse
         electric_power = baseline["electric_power_W"] * np.maximum(fan_factor, 0.10)
+        fan1_shaft_power = baseline.get("fan1_shaft_power_W", 0.0) * np.maximum(fan_factor, 0.10)
+        fan2_shaft_power = baseline.get("fan2_shaft_power_W", 0.0) * np.maximum(fan_factor, 0.10)
+        generator_shaft_power = baseline.get("generator_shaft_power_W", 0.0) * np.maximum(fan_factor, 0.10)
 
         for i in range(mach_flat.size):
             rows.append(
@@ -675,6 +714,9 @@ def _expanded_engine_rows_from_baselines(baselines, altitudes_ft, mach_values):
                     "thrust_N": float(thrust[i]),
                     "fuel_flow_kg_s": float(fuel_flow[i]),
                     "electric_power_W": float(electric_power[i]),
+                    "fan1_shaft_power_W": float(fan1_shaft_power[i]),
+                    "fan2_shaft_power_W": float(fan2_shaft_power[i]),
+                    "generator_shaft_power_W": float(generator_shaft_power[i]),
                     "inlet_area_m2": float(baseline["inlet_area_m2"]),
                     "nozzle_throat_area_m2": float(baseline["nozzle_throat_area_m2"]),
                 }
@@ -720,6 +762,9 @@ def write_pycycle_engine_deck(output_csv, altitudes_ft, mach_values):
         "thrust_N",
         "fuel_flow_kg_s",
         "electric_power_W",
+        "fan1_shaft_power_W",
+        "fan2_shaft_power_W",
+        "generator_shaft_power_W",
         "inlet_area_m2",
         "nozzle_throat_area_m2",
     ]

@@ -16,6 +16,9 @@ class EngineDeckRecord:
     thrust_N: float
     fuel_flow_kg_s: float
     electric_power_W: float = 0.0
+    fan1_shaft_power_W: float = 0.0
+    fan2_shaft_power_W: float = 0.0
+    generator_shaft_power_W: float = 0.0
     inlet_area_m2: float = 0.0
     nozzle_throat_area_m2: float = 0.0
 
@@ -62,6 +65,9 @@ class EngineDeck:
                         thrust_N=float(row["thrust_N"]),
                         fuel_flow_kg_s=float(row["fuel_flow_kg_s"]),
                         electric_power_W=float(row.get("electric_power_W") or 0.0),
+                        fan1_shaft_power_W=float(row.get("fan1_shaft_power_W") or 0.0),
+                        fan2_shaft_power_W=float(row.get("fan2_shaft_power_W") or 0.0),
+                        generator_shaft_power_W=float(row.get("generator_shaft_power_W") or 0.0),
                         inlet_area_m2=float(row.get("inlet_area_m2") or 0.0),
                         nozzle_throat_area_m2=float(row.get("nozzle_throat_area_m2") or 0.0),
                     )
@@ -90,6 +96,9 @@ class EngineDeck:
             "thrust_N": record.thrust_N,
             "fuel_flow_kg_s": record.fuel_flow_kg_s,
             "electric_power_W": record.electric_power_W,
+            "fan1_shaft_power_W": record.fan1_shaft_power_W,
+            "fan2_shaft_power_W": record.fan2_shaft_power_W,
+            "generator_shaft_power_W": record.generator_shaft_power_W,
             "inlet_area_m2": record.inlet_area_m2,
             "nozzle_throat_area_m2": record.nozzle_throat_area_m2,
         }
