@@ -1,2 +1,1 @@
-"""Astromechanic aircraft sizing utilities."""
-
+"""Aircraft sizing utilities."""

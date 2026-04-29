@@ -1,4 +1,4 @@
-"""Semi-empirical weight and AeroSandbox mass properties for Astromechanic.
+"""Semi-empirical weight and AeroSandbox mass properties for .
 
 The component equations are the fighter/attack statistical weight equations
 from Raymer, Aircraft Design: A Conceptual Approach, Ch. 15. Inputs to the
@@ -15,7 +15,7 @@ import aerosandbox.tools.units as u
 
 
 @dataclass(frozen=True)
-class AstromechanicWeightInputs:
+class WeightInputs:
     """Inputs for the semi-empirical weight equations.
 
     Source-equation units:
@@ -110,7 +110,7 @@ class AstromechanicWeightInputs:
 
 # Source: Daniel P. Raymer, Aircraft Design: A Conceptual Approach, Ch. 15,
 # fighter/attack statistical weight equations, Eq. 15.1.
-def wing_weight_lb(x: AstromechanicWeightInputs):
+def wing_weight_lb(x: WeightInputs):
     return (
         0.0103
         * x.delta_wing_factor
@@ -126,7 +126,7 @@ def wing_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.2.
-def horizontal_tail_weight_lb(x: AstromechanicWeightInputs):
+def horizontal_tail_weight_lb(x: WeightInputs):
     return (
         3.316
         * (1.0 + x.fuselage_width_at_htail_ft / x.horizontal_tail_span_ft) ** -2.0
@@ -136,7 +136,7 @@ def horizontal_tail_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.3.
-def vertical_tail_weight_lb(x: AstromechanicWeightInputs):
+def vertical_tail_weight_lb(x: WeightInputs):
     return (
         0.452
         * x.rolling_tail_factor
@@ -153,7 +153,7 @@ def vertical_tail_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.4.
-def fuselage_weight_lb(x: AstromechanicWeightInputs):
+def fuselage_weight_lb(x: WeightInputs):
     return (
         0.499
         * x.delta_fuselage_factor
@@ -166,7 +166,7 @@ def fuselage_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.5.
-def main_landing_gear_weight_lb(x: AstromechanicWeightInputs):
+def main_landing_gear_weight_lb(x: WeightInputs):
     return (
         x.crossbeam_gear_factor
         * x.tripod_gear_factor
@@ -176,7 +176,7 @@ def main_landing_gear_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.6.
-def nose_landing_gear_weight_lb(x: AstromechanicWeightInputs):
+def nose_landing_gear_weight_lb(x: WeightInputs):
     return (
         (x.landing_design_gross_weight_lb * x.landing_ultimate_load_factor) ** 0.290
         * x.nose_gear_length_in**0.5
@@ -185,22 +185,22 @@ def nose_landing_gear_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.7.
-def engine_mounts_weight_lb(x: AstromechanicWeightInputs):
+def engine_mounts_weight_lb(x: WeightInputs):
     return 0.013 * x.number_engines**0.795 * x.total_engine_thrust_lb**0.579 * x.ultimate_load_factor
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.8.
-def firewall_weight_lb(x: AstromechanicWeightInputs):
+def firewall_weight_lb(x: WeightInputs):
     return 1.13 * x.firewall_area_ft2
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.9.
-def engine_section_weight_lb(x: AstromechanicWeightInputs):
+def engine_section_weight_lb(x: WeightInputs):
     return 0.01 * x.engine_weight_each_lb**0.717 * x.number_engines * x.ultimate_load_factor
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.10.
-def air_induction_weight_lb(x: AstromechanicWeightInputs):
+def air_induction_weight_lb(x: WeightInputs):
     return (
         13.29
         * x.variable_geometry_factor
@@ -213,32 +213,32 @@ def air_induction_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.11.
-def tailpipe_weight_lb(x: AstromechanicWeightInputs):
+def tailpipe_weight_lb(x: WeightInputs):
     return 3.5 * x.engine_diameter_ft * x.tailpipe_length_ft * x.number_engines
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.12.
-def engine_cooling_weight_lb(x: AstromechanicWeightInputs):
+def engine_cooling_weight_lb(x: WeightInputs):
     return 4.55 * x.engine_diameter_ft * x.engine_shroud_length_ft * x.number_engines
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.13.
-def oil_cooling_weight_lb(x: AstromechanicWeightInputs):
+def oil_cooling_weight_lb(x: WeightInputs):
     return 37.82 * x.number_engines**1.023
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.14.
-def engine_controls_weight_lb(x: AstromechanicWeightInputs):
+def engine_controls_weight_lb(x: WeightInputs):
     return 10.5 * x.number_engines**1.008 * x.engine_front_to_cockpit_length_ft**0.222
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.15.
-def pneumatic_starter_weight_lb(x: AstromechanicWeightInputs):
+def pneumatic_starter_weight_lb(x: WeightInputs):
     return 0.025 * x.thrust_per_engine_lb**0.760 * x.number_engines**0.72
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.16.
-def fuel_system_and_tanks_weight_lb(x: AstromechanicWeightInputs):
+def fuel_system_and_tanks_weight_lb(x: WeightInputs):
     return (
         7.45
         * x.total_fuel_volume_gal**0.47
@@ -251,7 +251,7 @@ def fuel_system_and_tanks_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.17.
-def flight_controls_weight_lb(x: AstromechanicWeightInputs):
+def flight_controls_weight_lb(x: WeightInputs):
     return (
         36.28
         * x.mach**0.003
@@ -262,7 +262,7 @@ def flight_controls_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.18.
-def instruments_weight_lb(x: AstromechanicWeightInputs):
+def instruments_weight_lb(x: WeightInputs):
     return (
         8.0
         + 36.37 * x.number_engines**0.676 * x.number_fuel_tanks**0.237
@@ -271,12 +271,12 @@ def instruments_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.19.
-def hydraulics_weight_lb(x: AstromechanicWeightInputs):
+def hydraulics_weight_lb(x: WeightInputs):
     return 37.23 * x.variable_sweep_horizontal_tail_factor * x.number_hydraulic_utility_functions**0.664
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.20.
-def electrical_weight_lb(x: AstromechanicWeightInputs):
+def electrical_weight_lb(x: WeightInputs):
     return (
         172.2
         * x.mission_completion_factor
@@ -288,26 +288,26 @@ def electrical_weight_lb(x: AstromechanicWeightInputs):
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.21.
-def avionics_weight_lb(x: AstromechanicWeightInputs):
+def avionics_weight_lb(x: WeightInputs):
     return 2.117 * x.uninstalled_avionics_weight_lb**0.933
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.22.
-def furnishings_weight_lb(x: AstromechanicWeightInputs):
+def furnishings_weight_lb(x: WeightInputs):
     return 217.6 * x.number_crew
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.23.
-def air_conditioning_anti_ice_weight_lb(x: AstromechanicWeightInputs):
+def air_conditioning_anti_ice_weight_lb(x: WeightInputs):
     return 201.6 * ((x.uninstalled_avionics_weight_lb + 200.0 * x.number_crew) / 1000.0) ** 0.735
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.24.
-def handling_gear_weight_lb(x: AstromechanicWeightInputs):
+def handling_gear_weight_lb(x: WeightInputs):
     return 3.2e-4 * x.design_gross_weight_lb
 
 
-def astromechanic_component_weights_lb(inputs: AstromechanicWeightInputs):
+def _component_weights_lb(inputs: WeightInputs):
     """Return every Raymer component weight in lb."""
     component_functions = (
         ("wing", wing_weight_lb),
@@ -341,16 +341,16 @@ def astromechanic_component_weights_lb(inputs: AstromechanicWeightInputs):
     }
 
 
-def astromechanic_component_masses_kg(inputs: AstromechanicWeightInputs):
+def _component_masses_kg(inputs: WeightInputs):
     """Return every Raymer component mass in kg using AeroSandbox units."""
     return {
         key.replace("_lb", "_kg"): weight_lb * u.lbm
-        for key, weight_lb in astromechanic_component_weights_lb(inputs).items()
+        for key, weight_lb in _component_weights_lb(inputs).items()
     }
 
 
-def astromechanic_mass_properties(
-    inputs: AstromechanicWeightInputs,
+def _mass_properties(
+    inputs: WeightInputs,
     component_locations_m=None,
     include_raymer_propulsion_accessories=False,
 ):
@@ -363,7 +363,7 @@ def astromechanic_mass_properties(
     """
     component_locations_m = component_locations_m or {}
 
-    component_weights_lb = astromechanic_component_weights_lb(inputs)
+    component_weights_lb = _component_weights_lb(inputs)
     structure_components = (
         "wing",
         "horizontal_tail",
@@ -432,9 +432,9 @@ def astromechanic_mass_properties(
     return mass_props, total_mass_props
 
 
-def astromechanic_weight_breakdown(inputs: AstromechanicWeightInputs):
+def _weight_breakdown(inputs: WeightInputs):
     """Return component weights, grouped totals, and total aircraft weight."""
-    components = astromechanic_component_weights_lb(inputs)
+    components = _component_weights_lb(inputs)
     structure_components = (
         "wing",
         "horizontal_tail",
@@ -484,7 +484,7 @@ def astromechanic_weight_breakdown(inputs: AstromechanicWeightInputs):
 
     return {
         "components_lb": components,
-        "components_kg": astromechanic_component_masses_kg(inputs),
+        "components_kg": _component_masses_kg(inputs),
         "structure_lb": structure_lb,
         "raymer_propulsion_accessories_omitted_lb": raymer_propulsion_accessories_lb,
         "systems_lb": systems_lb,
@@ -500,14 +500,14 @@ def astromechanic_weight_breakdown(inputs: AstromechanicWeightInputs):
     }
 
 
-def calculate_astromechanic_weight(inputs: AstromechanicWeightInputs):
+def calculate__weight(inputs: WeightInputs):
     """Return the total aircraft weight in lb."""
-    return astromechanic_weight_breakdown(inputs)["total_aircraft_weight_lb"]
+    return _weight_breakdown(inputs)["total_aircraft_weight_lb"]
 
 
 def main():
     # Edit run options here.
-    inputs = AstromechanicWeightInputs(
+    inputs = WeightInputs(
         design_gross_weight_lb=12000.0,
         landing_design_gross_weight_lb=10000.0,
         ultimate_load_factor=7.5,
@@ -547,9 +547,9 @@ def main():
         tank_dry_weight_lb=700.0,
         custom_propulsion_weight_lb=1200.0,
     )
-    breakdown = astromechanic_weight_breakdown(inputs)
+    breakdown = _weight_breakdown(inputs)
 
-    print("Astromechanic weight breakdown")
+    print(" weight breakdown")
     print(f"Total aircraft weight: {breakdown['total_aircraft_weight_lb']:.3f} lb")
     print(f"Total aircraft mass: {breakdown['total_aircraft_mass_kg']:.3f} kg")
     print(f"OEW without engine: {breakdown['operating_empty_without_engine_lb']:.3f} lb")

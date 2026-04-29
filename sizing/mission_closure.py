@@ -1,4 +1,4 @@
-"""Close Astromechanic fuel, tank, weight, volume, and mission sizing.
+"""Close  fuel, tank, weight, volume, and mission sizing.
 
 pyCycle and tank analyses are treated as outer-loop truth models. The sizing
 loop uses pyCycle engine-deck samples for thrust/fuel-flow interpolation, runs
@@ -15,13 +15,15 @@ import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
 
 try:
+    from .aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
     from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
-    from .volume import AircraftVolumeInputs, aircraft_volume_breakdown
-    from .weight import AstromechanicWeightInputs, astromechanic_weight_breakdown
+    from .volume import aircraft_volume_breakdown
+    from .weight import _weight_breakdown
 except ImportError:
+    from aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
     from engine_sizing import design_point_thrust_to_weight_from_wing_loading
-    from volume import AircraftVolumeInputs, aircraft_volume_breakdown
-    from weight import AstromechanicWeightInputs, astromechanic_weight_breakdown
+    from volume import aircraft_volume_breakdown
+    from weight import _weight_breakdown
 
 
 @dataclass(frozen=True)
@@ -137,85 +139,89 @@ def weight_inputs_from_sizing(
     number_engines,
     fuel_density_kg_m3,
 ):
-    aspect_ratio = 3.0
-    taper_ratio = 0.25
-    span_m = (planform_area_m2 * aspect_ratio) ** 0.5
     fuselage_length_m = 4.0 * planform_area_m2**0.5
-    fuselage_depth_m = 0.12 * fuselage_length_m
-    fuselage_width_m = 0.10 * fuselage_length_m
-    horizontal_tail_area_m2 = 0.16 * planform_area_m2
-    vertical_tail_area_m2 = 0.10 * planform_area_m2
-    fuel_volume_m3 = fuel_mass_kg / fuel_density_kg_m3
-
-    return AstromechanicWeightInputs(
-        design_gross_weight_lb=takeoff_mass_kg / u.lbm,
-        landing_design_gross_weight_lb=0.85 * takeoff_mass_kg / u.lbm,
-        ultimate_load_factor=7.5,
-        landing_ultimate_load_factor=4.5,
-        mach=5.0,
-        dynamic_pressure_lb_ft2=500.0,
-        wing_area_ft2=planform_area_m2 / u.foot**2,
-        aspect_ratio=aspect_ratio,
-        taper_ratio=taper_ratio,
-        sweep_25_rad=np.radians(60.0),
-        root_thickness_to_chord=0.06,
-        wing_mounted_control_area_ft2=0.08 * planform_area_m2 / u.foot**2,
-        horizontal_tail_area_ft2=horizontal_tail_area_m2 / u.foot**2,
-        horizontal_tail_span_ft=0.25 * span_m / u.foot,
-        fuselage_width_at_htail_ft=fuselage_width_m / u.foot,
-        vertical_tail_area_ft2=vertical_tail_area_m2 / u.foot**2,
-        vertical_tail_aspect_ratio=1.4,
-        vertical_tail_height_ft=(vertical_tail_area_m2 * 1.4) ** 0.5 / u.foot,
-        horizontal_tail_height_ft=0.0,
-        tail_length_ft=0.55 * fuselage_length_m / u.foot,
-        rudder_area_ft2=0.25 * vertical_tail_area_m2 / u.foot**2,
-        fuselage_structural_length_ft=fuselage_length_m / u.foot,
-        fuselage_structural_depth_ft=fuselage_depth_m / u.foot,
-        fuselage_structural_width_ft=fuselage_width_m / u.foot,
-        main_gear_length_in=42.0,
-        nose_gear_length_in=30.0,
-        number_engines=number_engines,
-        total_engine_thrust_lb=12000.0,
-        thrust_per_engine_lb=12000.0 / number_engines,
-        engine_diameter_ft=2.0,
-        engine_front_to_cockpit_length_ft=0.35 * fuselage_length_m / u.foot,
-        total_fuel_volume_gal=fuel_volume_m3 / u.gallon,
-        number_mechanical_functions=1.0,
-        number_generators=number_engines,
-        fuel_weight_lb=fuel_mass_kg / u.lbm,
-        tank_dry_weight_lb=tank_dry_mass_kg / u.lbm,
-        custom_propulsion_weight_lb=propulsion_mass_kg / u.lbm,
+    span_m = (planform_area_m2 * 3.0) ** 0.5
+    root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + 0.25))
+    vtail_area_m2 = 0.26 * planform_area_m2
+    airplane = build_airplane(
+        planform_area_m2=planform_area_m2,
+        fuselage_length_m=fuselage_length_m,
+        fuselage_height_m=0.12 * fuselage_length_m,
+        fuselage_width_m=0.10 * fuselage_length_m,
+        vtail_area_m2=vtail_area_m2,
+        vtail_span_m=(vtail_area_m2 * 1.4) ** 0.5,
+        vtail_dihedral_angle_deg=37.0,
+        main_wing_tip_le_x_m=0.25 * root_chord_m,
+        vtail_le_x_m=0.55 * fuselage_length_m,
+        tail_length_m=0.55 * fuselage_length_m,
+        rudder_area_m2=0.025 * planform_area_m2,
+        wing_mounted_control_area_m2=0.08 * planform_area_m2,
     )
+    return Aircraft(
+        airplane=airplane,
+        mass_kg=takeoff_mass_kg,
+        landing_mass_kg=0.85 * takeoff_mass_kg,
+        propulsion=PropulsionSystem(
+            mass_kg=propulsion_mass_kg,
+            number_engines=number_engines,
+            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+        ),
+        fuel=FuelSystem(
+            mass_kg=fuel_mass_kg,
+            volume_m3=fuel_mass_kg / fuel_density_kg_m3,
+            fuel_density_kg_m3=fuel_density_kg_m3,
+            tank_dry_mass_kg=tank_dry_mass_kg,
+        ),
+        payload=Payload(),
+    ).to_weight_inputs()
 
 
 def solve_weight_volume_for_fuel_and_tank(fuel_mass_kg, tank_dry_mass_kg, tank_volume_m3, config):
     opti = asb.Opti()
     planform_area_m2 = opti.variable(init_guess=80.0, lower_bound=1.0, scale=100.0)
     takeoff_mass_kg = opti.variable(init_guess=4000.0, lower_bound=100.0, scale=5000.0)
+    fuselage_length_m = 4.0 * planform_area_m2**0.5
+    span_m = (planform_area_m2 * 3.0) ** 0.5
+    root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + 0.25))
+    vtail_area_m2 = 0.26 * planform_area_m2
 
-    volume = aircraft_volume_breakdown(
-        AircraftVolumeInputs(
-            planform_area_m2=planform_area_m2,
-            fuel_mass_kg=fuel_mass_kg,
-            propulsion_volume_m3=config.propulsion_volume_m3,
-            payload_volume_m3=config.payload_volume_m3,
-            fuel_1_density_kg_m3=config.fuel_density_kg_m3,
-        )
+    airplane = build_airplane(
+        planform_area_m2=planform_area_m2,
+        fuselage_length_m=fuselage_length_m,
+        fuselage_height_m=0.12 * fuselage_length_m,
+        fuselage_width_m=0.10 * fuselage_length_m,
+        vtail_area_m2=vtail_area_m2,
+        vtail_span_m=(vtail_area_m2 * 1.4) ** 0.5,
+        vtail_dihedral_angle_deg=37.0,
+        main_wing_tip_le_x_m=0.25 * root_chord_m,
+        vtail_le_x_m=0.55 * fuselage_length_m,
+        tail_length_m=0.55 * fuselage_length_m,
+        rudder_area_m2=0.025 * planform_area_m2,
+        wing_mounted_control_area_m2=0.08 * planform_area_m2,
     )
+    aircraft = Aircraft(
+        airplane=airplane,
+        mass_kg=takeoff_mass_kg,
+        landing_mass_kg=0.85 * takeoff_mass_kg,
+        propulsion=PropulsionSystem(
+            mass_kg=config.propulsion_mass_kg,
+            volume_m3=config.propulsion_volume_m3,
+            number_engines=config.number_engines,
+            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+        ),
+        fuel=FuelSystem(
+            mass_kg=fuel_mass_kg,
+            volume_m3=fuel_mass_kg / config.fuel_density_kg_m3,
+            fuel_density_kg_m3=config.fuel_density_kg_m3,
+            tank_dry_mass_kg=tank_dry_mass_kg,
+        ),
+        payload=Payload(volume_m3=config.payload_volume_m3),
+    )
+    volume = aircraft_volume_breakdown(aircraft.to_volume_inputs())
     opti.subject_to(volume["kuechemann_slenderness_parameter"] == config.kuechemann_tau)
     opti.subject_to(volume["fuel_volume_m3"] <= tank_volume_m3 * config.tank_fill_fraction)
 
-    weight = astromechanic_weight_breakdown(
-        weight_inputs_from_sizing(
-            takeoff_mass_kg=takeoff_mass_kg,
-            planform_area_m2=planform_area_m2,
-            fuel_mass_kg=fuel_mass_kg,
-            tank_dry_mass_kg=tank_dry_mass_kg,
-            propulsion_mass_kg=config.propulsion_mass_kg,
-            number_engines=config.number_engines,
-            fuel_density_kg_m3=config.fuel_density_kg_m3,
-        )
-    )
+    weight = _weight_breakdown(aircraft.to_weight_inputs())
     opti.subject_to(takeoff_mass_kg == weight["total_aircraft_mass_kg"])
     opti.minimize(takeoff_mass_kg)
 
@@ -293,9 +299,10 @@ def run_5_point_mission_fuel(
         velocity_m_s = max(0.5 * (start.true_airspeed_m_s + end.true_airspeed_m_s), 1e-9)
         beta = current_weight_N / takeoff_weight_N
         wing_loading_N_m2 = takeoff_weight_N / planform_area_m2
-        specific_excess_power_m_s = 0.0
+        climb_rate_m_s = 0.0
+        acceleration_m_s2 = 0.0
         if i in (0, 1):
-            specific_excess_power_m_s = 15.0
+            climb_rate_m_s = 15.0
 
         required_thrust_to_weight = design_point_thrust_to_weight_from_wing_loading(
             wing_loading=wing_loading_N_m2,
@@ -307,7 +314,8 @@ def run_5_point_mission_fuel(
             drag_polar_k1=0.05,
             drag_polar_k2=0.0,
             zero_lift_drag_coefficient=0.03 if mach < 2.0 else 0.045,
-            specific_excess_power=specific_excess_power_m_s,
+            climb_rate=climb_rate_m_s,
+            acceleration=acceleration_m_s2,
         )
         required_thrust_N = required_thrust_to_weight * takeoff_weight_N
         engine = interpolate_pycycle_engine_deck(
@@ -404,7 +412,7 @@ def main():
     mission = result["mission"]
     tank = result["tank"]
 
-    print("Astromechanic mission closure")
+    print(" mission closure")
     print(f"Iterations: {len(result['history'])}")
     print(f"TO mass: {sizing['takeoff_mass_kg']:.3f} kg")
     print(f"S_plan: {sizing['planform_area_m2']:.3f} m^2")

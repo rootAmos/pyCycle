@@ -1,0 +1,45 @@
+---
+description: Prefer explicit data flow over module-level mutable state in Python
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Minimal use of global variables
+
+## Principles
+
+- **Pass data explicitly**: function arguments, return values, constructors, and small context objects beat reading/writing module-level names from many call sites.
+- **Module-level constants are fine** when they are **immutable by convention** (e.g. `UPPER_SNAKE` numbers, tuples, frozensets, frozen dataclasses). Avoid growing or resetting “constants” at runtime.
+- **Do not use globals for cross-cutting mutable state** (caches, “current” config, last result, debug flags). Use parameters, a dedicated instance, `contextvars` only when threading/async context is the real requirement, or framework hooks (e.g. OpenMDAO `Problem` / component I/O) instead of free globals.
+- **Prefer class or instance attributes** when state logically belongs to an object; prefer **dependency injection** (pass the service/config object in) over importing a mutable singleton.
+
+## When touching existing globals
+
+- **Do not add new mutable module-level variables** unless there is a strong, documented reason (e.g. extension registration APIs). Prefer narrowing scope.
+- If a global is unavoidable, **minimize visibility** (private name, single writer, clear lifecycle) and **avoid silent mutation** from distant modules.
+
+## Examples
+
+```python
+# BAD — hidden mutable module state
+_current_profile = None
+
+def set_profile(p):
+    global _current_profile
+    _current_profile = p
+
+def compute():
+    return f(_current_profile)  # implicit coupling
+
+
+# GOOD — explicit parameter
+def compute(profile):
+    return f(profile)
+```
+
+```python
+# ACCEPTABLE — immutable module constant
+DEFAULT_R_GAS = 287.05  # J/(kg·K)
+```
+
+When integrating with OpenMDAO-style models, **wire values through the model graph** (inputs/outputs, options, subsystems) rather than module globals that components read at import or runtime.

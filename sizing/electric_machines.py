@@ -160,7 +160,7 @@ def main():
         number_engines=2,
     )
 
-    print("Astromechanic electric machine powertrain")
+    print(" electric machine powertrain")
     print(f"Per-engine motor electric power: {result['per_engine_motor_electric_W']:.3f} W")
     print(f"Per-engine generator shaft power: {result['per_engine_generator_shaft_W']:.3f} W")
     print(f"Aircraft motor electric power: {result['aircraft_motor_electric_W']:.3f} W")

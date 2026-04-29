@@ -162,7 +162,7 @@ def main():
         )
     )
 
-    print("Astromechanic aircraft volume")
+    print(" aircraft volume")
     print(f"Total volume: {breakdown['total_aircraft_volume_m3']:.3f} m^3")
     print(f"Kuechemann tau: {breakdown['kuechemann_slenderness_parameter']:.5f}")
     print(f"Fuel volume: {breakdown['fuel_volume_m3']:.3f} m^3")

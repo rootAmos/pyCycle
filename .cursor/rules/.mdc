@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+Additional project conventions live in sibling `.mdc` files under `.cursor/rules/` (for example, `minimal-globals.mdc` for Python, `concise-code.mdc` for brevity).

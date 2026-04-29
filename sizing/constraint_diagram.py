@@ -1,4 +1,4 @@
-"""Build an Astromechanic constraint diagram with AeroSandbox.
+"""Build an  constraint diagram with AeroSandbox.
 
 This connects:
 - the volume model, which determines `S_plan` from Kuechemann slenderness,
@@ -16,13 +16,15 @@ import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
 
 try:
+    from .aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
     from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
-    from .volume import AircraftVolumeInputs, aircraft_volume_breakdown
-    from .weight import AstromechanicWeightInputs, astromechanic_weight_breakdown
+    from .volume import aircraft_volume_breakdown
+    from .weight import _weight_breakdown
 except ImportError:
+    from aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
     from engine_sizing import design_point_thrust_to_weight_from_wing_loading
-    from volume import AircraftVolumeInputs, aircraft_volume_breakdown
-    from weight import AstromechanicWeightInputs, astromechanic_weight_breakdown
+    from volume import aircraft_volume_breakdown
+    from weight import _weight_breakdown
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,8 @@ class ConstraintDesignPoint:
     load_factor: object = 1.0
     beta: object = 1.0
     alpha: object = 1.0
-    specific_excess_power_m_s: object = 0.0
+    climb_rate_m_s: object = 0.0
+    acceleration_m_s2: object = 0.0
     drag_polar_k1: object = 0.05
     drag_polar_k2: object = 0.0
     cd0: object = 0.025
@@ -54,7 +57,7 @@ class ConstraintDiagramConfig:
     wing_loading_min_N_m2: object = 1000.0
     wing_loading_max_N_m2: object = 20000.0
     wing_loading_points: int = 250
-    save_plot: object = "astromechanic_constraint_diagram.png"
+    save_plot: object = "_constraint_diagram.png"
     show_plot: bool = False
 
 
@@ -86,7 +89,7 @@ def default_constraint_design_points():
             mode="fan",
             mach=0.55,
             altitude_m=10000.0 * u.foot,
-            specific_excess_power_m_s=10.0,
+            climb_rate_m_s=10.0,
             cd0=0.028,
         ),
         ConstraintDesignPoint(
@@ -94,7 +97,7 @@ def default_constraint_design_points():
             mode="fan_ab",
             mach=1.3,
             altitude_m=30000.0 * u.foot,
-            specific_excess_power_m_s=20.0,
+            climb_rate_m_s=20.0,
             cd0=0.034,
         ),
         ConstraintDesignPoint(
@@ -102,7 +105,7 @@ def default_constraint_design_points():
             mode="ramjet",
             mach=3.5,
             altitude_m=50000.0 * u.foot,
-            specific_excess_power_m_s=30.0,
+            climb_rate_m_s=30.0,
             cd0=0.043,
         ),
     )
@@ -152,55 +155,40 @@ def design_point_flight_condition(design_point):
 
 
 def weight_inputs_from_coupled_sizing(takeoff_mass_kg, planform_area_m2, config):
-    aspect_ratio = 3.0
-    taper_ratio = 0.25
-    span_m = (planform_area_m2 * aspect_ratio) ** 0.5
-    mean_chord_m = planform_area_m2 / span_m
     fuselage_length_m = 4.0 * planform_area_m2**0.5
-    fuselage_depth_m = 0.12 * fuselage_length_m
-    fuselage_width_m = 0.10 * fuselage_length_m
-    horizontal_tail_area_m2 = 0.16 * planform_area_m2
-    vertical_tail_area_m2 = 0.10 * planform_area_m2
-    fuel_volume_m3 = config.fuel_mass_kg / config.fuel_density_kg_m3
-
-    return AstromechanicWeightInputs(
-        design_gross_weight_lb=takeoff_mass_kg / u.lbm,
-        landing_design_gross_weight_lb=0.85 * takeoff_mass_kg / u.lbm,
-        ultimate_load_factor=7.5,
-        landing_ultimate_load_factor=4.5,
-        mach=5.0,
-        dynamic_pressure_lb_ft2=500.0,
-        wing_area_ft2=planform_area_m2 / u.foot**2,
-        aspect_ratio=aspect_ratio,
-        taper_ratio=taper_ratio,
-        sweep_25_rad=np.radians(60.0),
-        root_thickness_to_chord=0.06,
-        wing_mounted_control_area_ft2=0.08 * planform_area_m2 / u.foot**2,
-        horizontal_tail_area_ft2=horizontal_tail_area_m2 / u.foot**2,
-        horizontal_tail_span_ft=0.25 * span_m / u.foot,
-        fuselage_width_at_htail_ft=fuselage_width_m / u.foot,
-        vertical_tail_area_ft2=vertical_tail_area_m2 / u.foot**2,
-        vertical_tail_aspect_ratio=1.4,
-        vertical_tail_height_ft=(vertical_tail_area_m2 * 1.4) ** 0.5 / u.foot,
-        horizontal_tail_height_ft=0.0,
-        tail_length_ft=0.55 * fuselage_length_m / u.foot,
-        rudder_area_ft2=0.25 * vertical_tail_area_m2 / u.foot**2,
-        fuselage_structural_length_ft=fuselage_length_m / u.foot,
-        fuselage_structural_depth_ft=fuselage_depth_m / u.foot,
-        fuselage_structural_width_ft=fuselage_width_m / u.foot,
-        main_gear_length_in=42.0,
-        nose_gear_length_in=30.0,
-        number_engines=config.number_engines,
-        total_engine_thrust_lb=12000.0,
-        thrust_per_engine_lb=12000.0 / config.number_engines,
-        engine_diameter_ft=2.0,
-        engine_front_to_cockpit_length_ft=0.35 * fuselage_length_m / u.foot,
-        total_fuel_volume_gal=fuel_volume_m3 / u.gallon,
-        number_mechanical_functions=1.0,
-        number_generators=config.number_engines,
-        fuel_weight_lb=config.fuel_mass_kg / u.lbm,
-        custom_propulsion_weight_lb=config.propulsion_mass_kg / u.lbm,
+    span_m = (planform_area_m2 * 3.0) ** 0.5
+    root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + 0.25))
+    vtail_area_m2 = 0.26 * planform_area_m2
+    airplane = build_airplane(
+        planform_area_m2=planform_area_m2,
+        fuselage_length_m=fuselage_length_m,
+        fuselage_height_m=0.12 * fuselage_length_m,
+        fuselage_width_m=0.10 * fuselage_length_m,
+        vtail_area_m2=vtail_area_m2,
+        vtail_span_m=(vtail_area_m2 * 1.4) ** 0.5,
+        vtail_dihedral_angle_deg=37.0,
+        main_wing_tip_le_x_m=0.25 * root_chord_m,
+        vtail_le_x_m=0.55 * fuselage_length_m,
+        tail_length_m=0.55 * fuselage_length_m,
+        rudder_area_m2=0.025 * planform_area_m2,
+        wing_mounted_control_area_m2=0.08 * planform_area_m2,
     )
+    return Aircraft(
+        airplane=airplane,
+        mass_kg=takeoff_mass_kg,
+        landing_mass_kg=0.85 * takeoff_mass_kg,
+        propulsion=PropulsionSystem(
+            mass_kg=config.propulsion_mass_kg,
+            number_engines=config.number_engines,
+            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+        ),
+        fuel=FuelSystem(
+            mass_kg=config.fuel_mass_kg,
+            volume_m3=config.fuel_mass_kg / config.fuel_density_kg_m3,
+            fuel_density_kg_m3=config.fuel_density_kg_m3,
+        ),
+        payload=Payload(),
+    ).to_weight_inputs()
 
 
 def solve_coupled_weight_volume(config=ConstraintDiagramConfig()):
@@ -208,20 +196,45 @@ def solve_coupled_weight_volume(config=ConstraintDiagramConfig()):
     planform_area_m2 = opti.variable(init_guess=80.0, lower_bound=1.0, scale=100.0)
     takeoff_mass_kg = opti.variable(init_guess=4000.0, lower_bound=100.0, scale=5000.0)
 
-    volume = aircraft_volume_breakdown(
-        AircraftVolumeInputs(
-            planform_area_m2=planform_area_m2,
-            fuel_mass_kg=config.fuel_mass_kg,
-            propulsion_volume_m3=config.propulsion_volume_m3,
-            payload_volume_m3=config.payload_volume_m3,
-            fuel_1_density_kg_m3=config.fuel_density_kg_m3,
-        )
+    fuselage_length_m = 4.0 * planform_area_m2**0.5
+    span_m = (planform_area_m2 * 3.0) ** 0.5
+    root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + 0.25))
+    vtail_area_m2 = 0.26 * planform_area_m2
+    airplane = build_airplane(
+        planform_area_m2=planform_area_m2,
+        fuselage_length_m=fuselage_length_m,
+        fuselage_height_m=0.12 * fuselage_length_m,
+        fuselage_width_m=0.10 * fuselage_length_m,
+        vtail_area_m2=vtail_area_m2,
+        vtail_span_m=(vtail_area_m2 * 1.4) ** 0.5,
+        vtail_dihedral_angle_deg=37.0,
+        main_wing_tip_le_x_m=0.25 * root_chord_m,
+        vtail_le_x_m=0.55 * fuselage_length_m,
+        tail_length_m=0.55 * fuselage_length_m,
+        rudder_area_m2=0.025 * planform_area_m2,
+        wing_mounted_control_area_m2=0.08 * planform_area_m2,
     )
+    aircraft = Aircraft(
+        airplane=airplane,
+        mass_kg=takeoff_mass_kg,
+        landing_mass_kg=0.85 * takeoff_mass_kg,
+        propulsion=PropulsionSystem(
+            mass_kg=config.propulsion_mass_kg,
+            volume_m3=config.propulsion_volume_m3,
+            number_engines=config.number_engines,
+            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+        ),
+        fuel=FuelSystem(
+            mass_kg=config.fuel_mass_kg,
+            volume_m3=config.fuel_mass_kg / config.fuel_density_kg_m3,
+            fuel_density_kg_m3=config.fuel_density_kg_m3,
+        ),
+        payload=Payload(volume_m3=config.payload_volume_m3),
+    )
+    volume = aircraft_volume_breakdown(aircraft.to_volume_inputs())
     opti.subject_to(volume["kuechemann_slenderness_parameter"] == config.kuechemann_tau)
 
-    weight = astromechanic_weight_breakdown(
-        weight_inputs_from_coupled_sizing(takeoff_mass_kg, planform_area_m2, config)
-    )
+    weight = _weight_breakdown(aircraft.to_weight_inputs())
     opti.subject_to(takeoff_mass_kg == weight["total_aircraft_mass_kg"])
     opti.minimize(takeoff_mass_kg)
 
@@ -277,7 +290,8 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
             drag_polar_k1=design_point.drag_polar_k1,
             drag_polar_k2=design_point.drag_polar_k2,
             zero_lift_drag_coefficient=design_point.cd0,
-            specific_excess_power=design_point.specific_excess_power_m_s,
+            climb_rate=design_point.climb_rate_m_s,
+            acceleration=design_point.acceleration_m_s2,
         )
         available_thrust_N = pycycle_design_point_thrust_N(
             engine_deck_rows,
@@ -295,7 +309,8 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
             drag_polar_k1=design_point.drag_polar_k1,
             drag_polar_k2=design_point.drag_polar_k2,
             zero_lift_drag_coefficient=design_point.cd0,
-            specific_excess_power=design_point.specific_excess_power_m_s,
+            climb_rate=design_point.climb_rate_m_s,
+            acceleration=design_point.acceleration_m_s2,
         )
         curves[design_point.name] = {
             "design_point": design_point,
@@ -371,7 +386,7 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
     )
     ax.set_xlabel("Wing loading W/S, N/m^2")
     ax.set_ylabel("Design thrust-to-weight T/W")
-    ax.set_title("Astromechanic constraint diagram")
+    ax.set_title(" constraint diagram")
     ax.grid(True, alpha=0.3)
     ax.set_ylim(bottom=0.0)
     ax.legend(loc="upper left", fontsize=8, ncols=2)
@@ -395,14 +410,14 @@ def main():
         propulsion_volume_m3=3.0,
         payload_volume_m3=5.0,
         thrust_scale=1.0,
-        save_plot="astromechanic_constraint_diagram.png",
+        save_plot="_constraint_diagram.png",
         show_plot=False,
     )
     result = build_constraint_diagram(config)
     plot_constraint_diagram(result, save_plot=config.save_plot, show_plot=config.show_plot)
 
     coupled = result["coupled"]
-    print("Astromechanic coupled constraint solution")
+    print(" coupled constraint solution")
     print(f"S_plan: {coupled['planform_area_m2']:.3f} m^2")
     print(f"TO mass: {coupled['takeoff_mass_kg']:.3f} kg")
     print(f"OEW without engine: {coupled['weight']['operating_empty_without_engine_lb'] * u.lbm:.3f} kg")
