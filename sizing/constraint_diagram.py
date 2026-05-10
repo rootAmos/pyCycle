@@ -23,7 +23,7 @@ try:
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
     )
-    from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
+    from .constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
     from .weight import _weight_breakdown
 except ImportError:
@@ -34,7 +34,7 @@ except ImportError:
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
     )
-    from engine_sizing import design_point_thrust_to_weight_from_wing_loading
+    from constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
     from weight import _weight_breakdown
 
@@ -44,7 +44,7 @@ class ConstraintDesignPoint:
     name: str
     mode: str
     mach: object
-    altitude_m: object
+    altitude_m: object = None
     case: str = "generic"
     load_factor: object = 1.0
     beta: object = 1.0
@@ -53,6 +53,8 @@ class ConstraintDesignPoint:
     acceleration_m_s2: object = 0.0
     initial_mach: object = None
     final_mach: object = None
+    initial_altitude_m: object = None
+    final_altitude_m: object = None
     acceleration_time_s: object = 30.0
     drag_polar_k1: object = 0.05
     drag_polar_k2: object = 0.0
@@ -114,14 +116,15 @@ def default_constraint_design_points():
             cd0=0.028,
         ),
         ConstraintDesignPoint(
-            name="Case 4: horizontal acceleration",
+            name="Case 4: climb acceleration",
             mode="fan_ab",
             mach=1.2,
-            altitude_m=30000.0 * u.foot,
-            case="horizontal_acceleration",
-            initial_mach=0.8,
-            final_mach=1.6,
-            acceleration_time_s=60.0,
+            case="climb_acceleration",
+            initial_mach=1.0,
+            final_mach=3.0,
+            acceleration_time_s=30 * 60.0,
+            initial_altitude_m=30000 * u.foot,
+            final_altitude_m=45000 * u.foot,
             cd0=0.034,
         ),
         ConstraintDesignPoint(
@@ -213,15 +216,32 @@ def pycycle_design_point_thrust_N(engine_deck_rows, design_point, thrust_scale=1
         candidates,
         key=lambda item: (
             (item["mach"] - design_point.mach) ** 2
-            + ((item["altitude_m"] - design_point.altitude_m) / 10000.0) ** 2
+            + (
+                (item["altitude_m"] - representative_altitude_m(design_point))
+                / 10000.0
+            ) ** 2
         ),
     )
     throttle = max(row["throttle"], 1e-9)
     return thrust_scale * row["thrust_N"] / throttle
 
 
+def representative_altitude_m(design_point):
+    if design_point.altitude_m is not None:
+        return design_point.altitude_m
+    if (
+        design_point.initial_altitude_m is not None
+        and design_point.final_altitude_m is not None
+    ):
+        return 0.5 * (design_point.initial_altitude_m + design_point.final_altitude_m)
+    raise ValueError(
+        f"{design_point.name} must define altitude_m or both "
+        "initial_altitude_m and final_altitude_m."
+    )
+
+
 def design_point_flight_condition(design_point):
-    atmosphere = asb.Atmosphere(altitude=design_point.altitude_m)
+    atmosphere = asb.Atmosphere(altitude=representative_altitude_m(design_point))
     velocity_m_s = design_point.mach * atmosphere.speed_of_sound()
     dynamic_pressure_Pa = 0.5 * atmosphere.density() * velocity_m_s**2
     return velocity_m_s, dynamic_pressure_Pa
@@ -229,7 +249,7 @@ def design_point_flight_condition(design_point):
 
 def required_tw_for_design_point(design_point, wing_loading_N_m2):
     """Return required sea-level static T/W for one literature constraint case."""
-    atmosphere = asb.Atmosphere(altitude=design_point.altitude_m)
+    atmosphere = asb.Atmosphere(altitude=representative_altitude_m(design_point))
     density_kg_m3 = atmosphere.density()
     gravity_m_s2 = 9.80665
     cd0 = design_point.cd0
@@ -238,16 +258,43 @@ def required_tw_for_design_point(design_point, wing_loading_N_m2):
     k1 = design_point.drag_polar_k1
     k2 = design_point.drag_polar_k2
 
-    if design_point.case == "horizontal_acceleration":
+    if design_point.case in ("horizontal_acceleration", "climb_acceleration"):
         initial_mach = design_point.initial_mach
         final_mach = design_point.final_mach
         if initial_mach is None or final_mach is None:
             raise ValueError(
                 f"{design_point.name} must define initial_mach and final_mach."
             )
-        speed_of_sound_m_s = atmosphere.speed_of_sound()
-        initial_velocity_m_s = initial_mach * speed_of_sound_m_s
-        final_velocity_m_s = final_mach * speed_of_sound_m_s
+        if design_point.case == "climb_acceleration":
+            has_altitude_segment = (
+                design_point.initial_altitude_m is not None
+                and design_point.final_altitude_m is not None
+            )
+            if has_altitude_segment:
+                initial_altitude_m = design_point.initial_altitude_m
+                final_altitude_m = design_point.final_altitude_m
+                midpoint_altitude_m = 0.5 * (initial_altitude_m + final_altitude_m)
+                atmosphere = asb.Atmosphere(altitude=midpoint_altitude_m)
+                density_kg_m3 = atmosphere.density()
+                initial_atmosphere = asb.Atmosphere(altitude=initial_altitude_m)
+                final_atmosphere = asb.Atmosphere(altitude=final_altitude_m)
+                initial_velocity_m_s = initial_mach * initial_atmosphere.speed_of_sound()
+                final_velocity_m_s = final_mach * final_atmosphere.speed_of_sound()
+                climb_rate_m_s = (
+                    (final_altitude_m - initial_altitude_m)
+                    / design_point.acceleration_time_s
+                )
+            else:
+                speed_of_sound_m_s = atmosphere.speed_of_sound()
+                initial_velocity_m_s = initial_mach * speed_of_sound_m_s
+                final_velocity_m_s = final_mach * speed_of_sound_m_s
+                climb_rate_m_s = design_point.climb_rate_m_s
+        else:
+            speed_of_sound_m_s = atmosphere.speed_of_sound()
+            initial_velocity_m_s = initial_mach * speed_of_sound_m_s
+            final_velocity_m_s = final_mach * speed_of_sound_m_s
+            climb_rate_m_s = 0.0
+
         velocity_m_s = 0.5 * (initial_velocity_m_s + final_velocity_m_s)
         dynamic_pressure_Pa = 0.5 * density_kg_m3 * velocity_m_s**2
         acceleration_m_s2 = (
@@ -264,6 +311,7 @@ def required_tw_for_design_point(design_point, wing_loading_N_m2):
             drag_polar_k1=k1,
             drag_polar_k2=k2,
             zero_lift_drag_coefficient=cd0,
+            climb_rate_m_s=climb_rate_m_s,
             acceleration_m_s2=acceleration_m_s2,
         )
 
@@ -602,14 +650,16 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
     )
     ax.axvline(
         result["coupled"]["wing_loading_N_m2"],
-        color="tab:red",
+        color="black",
+        linestyle=":",
         linewidth=2.0,
         label="Coupled weight/volume W/S",
     )
     ax.scatter(
         [result["coupled"]["wing_loading_N_m2"]],
         [result["coupled"]["required_thrust_to_weight"]],
-        color="tab:red",
+        color="black",
+        marker="D",
         zorder=5,
     )
     ax.set_xlabel("Wing loading W/S, N/m^2")

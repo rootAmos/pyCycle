@@ -22,7 +22,7 @@ try:
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
     )
-    from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
+    from .constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
     from .weight import _weight_breakdown
 except ImportError:
@@ -33,7 +33,7 @@ except ImportError:
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
     )
-    from engine_sizing import design_point_thrust_to_weight_from_wing_loading
+    from constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
     from weight import _weight_breakdown
 

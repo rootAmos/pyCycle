@@ -816,10 +816,6 @@ def plot_cycle_map(prob):
         (0.,   5.),      # Area (m²):        0 to 5 m² (covers large engine flow areas)
     ]
 
-    ROW_LABELS = ['Temperature  (deg C)', 'Pressure  (kPa)', 'Pressure Ratio',
-                  'Mach Number', 'Area  (m^2)']
-    PHYS.insert(2, (0., 200.))  # cumulative pressure ratio relative to freestream pressure
-
     # Temperature y-axis scaling strategy:
     # T_PER_COLUMN=True → each column (mode) gets its own T y-axis range.
     # This is because fan-only modes (Tmax ~600 K) and combustion modes (Tmax ~2100 K)
@@ -867,16 +863,7 @@ def plot_cycle_map(prob):
         MN = np.array(MN)
         A = np.array(A)
 
-        def _relative_to_freestream(values):
-            ref = values[0]
-            if not np.isfinite(ref) or ref <= 0.0:
-                return np.full_like(values, np.nan, dtype=float)
-            return values / ref
-
-        all_data[pt] = dict(Tt=Tt, Ts=Ts, Pt=Pt, Ps=Ps,
-                            PRt=_relative_to_freestream(Pt),
-                            PRs=_relative_to_freestream(Ps),
-                            MN=MN, A=A)
+        all_data[pt] = dict(Tt=Tt, Ts=Ts, Pt=Pt, Ps=Ps, MN=MN, A=A)
 
     # -------------------------------------------------------------------------
     # COMPUTE Y-AXIS LIMITS (with 8% padding so lines don't touch the border)
@@ -901,7 +888,7 @@ def plot_cycle_map(prob):
     # Global ylims for P, MN, Area (rows 1–3): shared across all 4 columns
     # so that cross-mode comparisons are meaningful.
     global_ylims = [None]   # row 0 (T) will be per-column — placeholder here
-    for (lo, hi), keys in zip(PHYS[1:], [('Pt', 'Ps'), ('PRt', 'PRs'), ('MN',), ('A',)]):
+    for (lo, hi), keys in zip(PHYS[1:], [('Pt', 'Ps'), ('MN',), ('A',)]):
         # Gather all values for this quantity from all modes
         vals = _valid([all_data[pt][k] for pt in MODES for k in keys], lo, hi)
         global_ylims.append(_bounds(vals, lo, hi))
@@ -916,7 +903,7 @@ def plot_cycle_map(prob):
     # -------------------------------------------------------------------------
     # SECOND PASS: draw the 4×4 subplot grid
     # -------------------------------------------------------------------------
-    fig, axes = plt.subplots(5, 4, figsize=(22, 17))
+    fig, axes = plt.subplots(4, 4, figsize=(22, 14))
     fig.suptitle('Duality Engine — Cycle Station Map', fontsize=15, fontweight='bold', y=1.01)
 
     # ROW_KEYS: each row specifies which data keys to plot, display labels, and colours.
@@ -926,9 +913,8 @@ def plot_cycle_map(prob):
     ROW_KEYS = [
         ('Tt', 'Ts', 'T_total', 'T_static', '#d62728', '#1f77b4'),  # row 0: Temperature
         ('Pt', 'Ps', 'P_total', 'P_static', '#d62728', '#1f77b4'),  # row 1: Pressure
-        ('PRt', 'PRs', 'PR_total', 'PR_static', '#ff7f0e', '#17becf'),  # row 2: Pressure ratio
-        ('MN', None, 'Mach',    None,        '#2ca02c', None),       # row 3: Mach number
-        ('A',  None, 'Area',    None,        '#9467bd', None),       # row 4: Area
+        ('MN', None, 'Mach',    None,        '#2ca02c', None),       # row 2: Mach number
+        ('A',  None, 'Area',    None,        '#9467bd', None),       # row 3: Area
     ]
 
     for col, (pt, cfg) in enumerate(MODES.items()):
@@ -945,9 +931,6 @@ def plot_cycle_map(prob):
                 ylim = col_T_ylims[pt]   # per-column for temperature
             else:
                 ylim = global_ylims[row] # global for P, MN, area
-            if row == 2:
-                ymin, ymax = ylim
-                ylim = (ymin, ymax + 0.10 * (ymax - ymin or 1.0))
 
             def _mask(y, _lo=lo, _hi=hi):
                 """
@@ -973,23 +956,6 @@ def plot_cycle_map(prob):
                 y_stat = _mask(d[k_stat])
                 ax.plot(xs, y_stat, color=c_stat, marker='s', linewidth=2,
                         markersize=5, linestyle='--', label=lbl_stat, zorder=3)
-
-            if row == 2:
-                def _label_pr(y, color, x_offset=0):
-                    for x, val in zip(xs, y):
-                        if not np.isfinite(val):
-                            continue
-                        label = f'{val:.2f}' if abs(val) < 10.0 else f'{val:.1f}'
-                        ax.annotate(label, (x, val), xytext=(x_offset, 6),
-                                    textcoords='offset points', ha='center',
-                                    va='bottom', fontsize=6.5, color=color,
-                                    bbox=dict(boxstyle='round,pad=0.15',
-                                              fc='white', ec='none', alpha=0.75),
-                                    zorder=4)
-
-                _label_pr(y_tot, c_tot, x_offset=-5)
-                if k_stat is not None:
-                    _label_pr(y_stat, c_stat, x_offset=5)
 
             # Axis formatting
             ax.set_xticks(xs)
