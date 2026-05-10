@@ -15,12 +15,24 @@ import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
 
 try:
-    from .aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
+    from .aircraft import (
+        Aircraft,
+        FuelSystem,
+        Payload,
+        PropulsionSystem,
+        build_geometric_asb_airplane as build_airplane,
+    )
     from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
     from .weight import _weight_breakdown
 except ImportError:
-    from aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
+    from aircraft import (
+        Aircraft,
+        FuelSystem,
+        Payload,
+        PropulsionSystem,
+        build_geometric_asb_airplane as build_airplane,
+    )
     from engine_sizing import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
     from weight import _weight_breakdown
@@ -305,17 +317,17 @@ def run_5_point_mission_fuel(
             climb_rate_m_s = 15.0
 
         required_thrust_to_weight = design_point_thrust_to_weight_from_wing_loading(
-            wing_loading=wing_loading_N_m2,
-            dynamic_pressure=dynamic_pressure_Pa,
-            velocity=velocity_m_s,
+            wing_loading_N_m2=wing_loading_N_m2,
+            dynamic_pressure_Pa=dynamic_pressure_Pa,
+            velocity_m_s=velocity_m_s,
             installed_full_throttle_thrust_lapse=1.0,
             instantaneous_weight_fraction=beta,
             load_factor=1.0,
             drag_polar_k1=0.05,
             drag_polar_k2=0.0,
             zero_lift_drag_coefficient=0.03 if mach < 2.0 else 0.045,
-            climb_rate=climb_rate_m_s,
-            acceleration=acceleration_m_s2,
+            climb_rate_m_s=climb_rate_m_s,
+            acceleration_m_s2=acceleration_m_s2,
         )
         required_thrust_N = required_thrust_to_weight * takeoff_weight_N
         engine = interpolate_pycycle_engine_deck(

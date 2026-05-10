@@ -10,26 +10,33 @@ import aerosandbox.numpy as np
 class ConstraintAnalysisInputs:
     """Vectorized flight conditions for the thrust-to-weight sizing equation.
 
-    Use consistent units. SI is recommended:
-    - wing loading: N/m^2
-    - dynamic pressure: Pa
-    - velocity: m/s
-    - climb rate: m/s
-    - acceleration: m/s^2
+    Flight speed is specified by Mach and altitude. Dynamic pressure and
+    true airspeed are computed with AeroSandbox's atmosphere model.
     """
 
     names: object
-    dynamic_pressure: object
-    velocity: object
+    mach: object
+    altitude_m: object
     installed_full_throttle_thrust_lapse: object = 1.0
     instantaneous_weight_fraction: object = 1.0
     load_factor: object = 1.0
     drag_polar_k1: object = 0.0
     drag_polar_k2: object = 0.0
     zero_lift_drag_coefficient: object = 0.0
-    climb_rate: object = 0.0
-    acceleration: object = 0.0
-    gravity: object = 9.80665
+    climb_rate_m_s: object = 0.0
+    acceleration_m_s2: object = 0.0
+    gravity_m_s2: object = 9.80665
+
+    @property
+    def velocity_m_s(self):
+        atmosphere = asb.Atmosphere(altitude=self.altitude_m)
+        return self.mach * atmosphere.speed_of_sound()
+
+    @property
+    def dynamic_pressure_Pa(self):
+        atmosphere = asb.Atmosphere(altitude=self.altitude_m)
+        velocity_m_s = self.mach * atmosphere.speed_of_sound()
+        return 0.5 * atmosphere.density() * velocity_m_s**2
 
 
 @dataclass(frozen=True)
@@ -41,25 +48,25 @@ class EngineSizingResult:
 
 
 def design_point_thrust_to_weight_from_wing_loading(
-    wing_loading,
-    dynamic_pressure,
-    velocity,
+    wing_loading_N_m2,
+    dynamic_pressure_Pa,
+    velocity_m_s,
     installed_full_throttle_thrust_lapse=1.0,
     instantaneous_weight_fraction=1.0,
     load_factor=1.0,
     drag_polar_k1=0.0,
     drag_polar_k2=0.0,
     zero_lift_drag_coefficient=0.0,
-    climb_rate=0.0,
-    acceleration=0.0,
-    gravity=9.80665,
+    climb_rate_m_s=0.0,
+    acceleration_m_s2=0.0,
+    gravity_m_s2=9.80665,
 ):
     """Return design T/W for a condition at a given wing loading W/S."""
     beta = instantaneous_weight_fraction
     alpha = installed_full_throttle_thrust_lapse
-    wing_loading_term = dynamic_pressure / (beta * wing_loading)
-    lift_loading_term = load_factor * beta * wing_loading / dynamic_pressure
-    excess_power = climb_rate + velocity * acceleration / gravity
+    wing_loading_term = dynamic_pressure_Pa / (beta * wing_loading_N_m2)
+    lift_loading_term = load_factor * beta * wing_loading_N_m2 / dynamic_pressure_Pa
+    excess_power_m_s = climb_rate_m_s + velocity_m_s * acceleration_m_s2 / gravity_m_s2
 
     return (
         beta
@@ -71,7 +78,7 @@ def design_point_thrust_to_weight_from_wing_loading(
                 + drag_polar_k2 * lift_loading_term
                 + zero_lift_drag_coefficient
             )
-            + excess_power / velocity
+            + excess_power_m_s / velocity_m_s
         )
     )
 
@@ -98,9 +105,9 @@ def thrust_to_weight_constraint_residual(
     wing_loading_grid = np.reshape(np.array(wing_loadings), (1, -1))
 
     required_thrust_to_weight = design_point_thrust_to_weight_from_wing_loading(
-        wing_loading=wing_loading_grid,
-        dynamic_pressure=_as_condition_column(inputs.dynamic_pressure),
-        velocity=_as_condition_column(inputs.velocity),
+        wing_loading_N_m2=wing_loading_grid,
+        dynamic_pressure_Pa=_as_condition_column(inputs.dynamic_pressure_Pa),
+        velocity_m_s=_as_condition_column(inputs.velocity_m_s),
         installed_full_throttle_thrust_lapse=_as_condition_column(
             inputs.installed_full_throttle_thrust_lapse
         ),
@@ -113,9 +120,9 @@ def thrust_to_weight_constraint_residual(
         zero_lift_drag_coefficient=_as_condition_column(
             inputs.zero_lift_drag_coefficient
         ),
-        climb_rate=_as_condition_column(inputs.climb_rate),
-        acceleration=_as_condition_column(inputs.acceleration),
-        gravity=_as_condition_column(inputs.gravity),
+        climb_rate_m_s=_as_condition_column(inputs.climb_rate_m_s),
+        acceleration_m_s2=_as_condition_column(inputs.acceleration_m_s2),
+        gravity_m_s2=_as_condition_column(inputs.gravity_m_s2),
     )
 
     return thrust_to_weight - required_thrust_to_weight
@@ -142,9 +149,9 @@ def solve_minimum_thrust_to_weight(
     opti.subject_to(wing_loading <= wing_loading_max)
 
     required_thrust_to_weight = design_point_thrust_to_weight_from_wing_loading(
-        wing_loading=wing_loading,
-        dynamic_pressure=inputs.dynamic_pressure,
-        velocity=inputs.velocity,
+        wing_loading_N_m2=wing_loading,
+        dynamic_pressure_Pa=inputs.dynamic_pressure_Pa,
+        velocity_m_s=inputs.velocity_m_s,
         installed_full_throttle_thrust_lapse=(
             inputs.installed_full_throttle_thrust_lapse
         ),
@@ -153,9 +160,9 @@ def solve_minimum_thrust_to_weight(
         drag_polar_k1=inputs.drag_polar_k1,
         drag_polar_k2=inputs.drag_polar_k2,
         zero_lift_drag_coefficient=inputs.zero_lift_drag_coefficient,
-        climb_rate=inputs.climb_rate,
-        acceleration=inputs.acceleration,
-        gravity=inputs.gravity,
+        climb_rate_m_s=inputs.climb_rate_m_s,
+        acceleration_m_s2=inputs.acceleration_m_s2,
+        gravity_m_s2=inputs.gravity_m_s2,
     )
     opti.subject_to(thrust_to_weight >= required_thrust_to_weight)
 
@@ -165,9 +172,9 @@ def solve_minimum_thrust_to_weight(
     solved_wing_loading = float(sol(wing_loading))
     condition_values = np.array(
         design_point_thrust_to_weight_from_wing_loading(
-            wing_loading=solved_wing_loading,
-            dynamic_pressure=inputs.dynamic_pressure,
-            velocity=inputs.velocity,
+            wing_loading_N_m2=solved_wing_loading,
+            dynamic_pressure_Pa=inputs.dynamic_pressure_Pa,
+            velocity_m_s=inputs.velocity_m_s,
             installed_full_throttle_thrust_lapse=(
                 inputs.installed_full_throttle_thrust_lapse
             ),
@@ -176,9 +183,9 @@ def solve_minimum_thrust_to_weight(
             drag_polar_k1=inputs.drag_polar_k1,
             drag_polar_k2=inputs.drag_polar_k2,
             zero_lift_drag_coefficient=inputs.zero_lift_drag_coefficient,
-            climb_rate=inputs.climb_rate,
-            acceleration=inputs.acceleration,
-            gravity=inputs.gravity,
+            climb_rate_m_s=inputs.climb_rate_m_s,
+            acceleration_m_s2=inputs.acceleration_m_s2,
+            gravity_m_s2=inputs.gravity_m_s2,
         )
     )
     active_condition = inputs.names[int(np.argmax(condition_values))]
@@ -199,13 +206,13 @@ def main():
 
     inputs = ConstraintAnalysisInputs(
         names=("Cruise", "Climb", "Maneuver"),
-        dynamic_pressure=np.array([5000.0, 3500.0, 8000.0]),
-        velocity=np.array([250.0, 180.0, 220.0]),
+        mach=np.array([3.0, 0.9, 1.2]),
+        altitude_m=np.array([60000.0, 10000.0, 15000.0]) * 0.3048,
         load_factor=np.array([1.0, 1.0, 2.5]),
         drag_polar_k1=np.array([0.050, 0.055, 0.050]),
         zero_lift_drag_coefficient=np.array([0.020, 0.024, 0.026]),
-        climb_rate=np.array([0.0, 12.0, 0.0]),
-        acceleration=np.array([0.0, 0.0, 0.0]),
+        climb_rate_m_s=np.array([0.0, 12.0, 0.0]),
+        acceleration_m_s2=np.array([0.0, 0.0, 0.0]),
     )
 
     result = solve_minimum_thrust_to_weight(
@@ -225,9 +232,9 @@ def main():
     wing_loadings = np.linspace(wing_loading_min, wing_loading_max, 300)
     wing_loading_grid = np.reshape(wing_loadings, (1, -1))
     required_curves = design_point_thrust_to_weight_from_wing_loading(
-        wing_loading=wing_loading_grid,
-        dynamic_pressure=_as_condition_column(inputs.dynamic_pressure),
-        velocity=_as_condition_column(inputs.velocity),
+        wing_loading_N_m2=wing_loading_grid,
+        dynamic_pressure_Pa=_as_condition_column(inputs.dynamic_pressure_Pa),
+        velocity_m_s=_as_condition_column(inputs.velocity_m_s),
         installed_full_throttle_thrust_lapse=_as_condition_column(
             inputs.installed_full_throttle_thrust_lapse
         ),
@@ -240,9 +247,9 @@ def main():
         zero_lift_drag_coefficient=_as_condition_column(
             inputs.zero_lift_drag_coefficient
         ),
-        climb_rate=_as_condition_column(inputs.climb_rate),
-        acceleration=_as_condition_column(inputs.acceleration),
-        gravity=_as_condition_column(inputs.gravity),
+        climb_rate_m_s=_as_condition_column(inputs.climb_rate_m_s),
+        acceleration_m_s2=_as_condition_column(inputs.acceleration_m_s2),
+        gravity_m_s2=_as_condition_column(inputs.gravity_m_s2),
     )
 
     fig, ax = plt.subplots(figsize=(8, 5))

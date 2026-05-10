@@ -133,10 +133,9 @@ def airplane_geometry(airplane):
     vertical_tail_area_m2 = vtail_area_m2 * np.sin(vtail_dihedral_rad) ** 2
     horizontal_tail_span_m = vtail_span_m * np.cos(vtail_dihedral_rad)
     vertical_tail_height_m = 0.5 * vtail_span_m * np.sin(vtail_dihedral_rad)
-    fuselage_x = [xsec.xyz_c[0] for xsec in fuselage.xsecs]
-    fuselage_length_m = max(fuselage_x) - min(fuselage_x)
-    fuselage_height_m = max(xsec.height for xsec in fuselage.xsecs)
-    fuselage_width_m = max(xsec.width for xsec in fuselage.xsecs)
+    fuselage_length_m = fuselage.xsecs[-1].xyz_c[0] - fuselage.xsecs[0].xyz_c[0]
+    fuselage_height_m = fuselage.xsecs[0].height
+    fuselage_width_m = fuselage.xsecs[0].width
     root_chord = main_wing.xsecs[0].chord
     tip_chord = main_wing.xsecs[-1].chord
 

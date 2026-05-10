@@ -16,12 +16,24 @@ import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
 
 try:
-    from .aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
+    from .aircraft import (
+        Aircraft,
+        FuelSystem,
+        Payload,
+        PropulsionSystem,
+        build_geometric_asb_airplane as build_airplane,
+    )
     from .engine_sizing import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
     from .weight import _weight_breakdown
 except ImportError:
-    from aircraft import Aircraft, FuelSystem, Payload, PropulsionSystem, build_airplane
+    from aircraft import (
+        Aircraft,
+        FuelSystem,
+        Payload,
+        PropulsionSystem,
+        build_geometric_asb_airplane as build_airplane,
+    )
     from engine_sizing import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
     from weight import _weight_breakdown
@@ -33,14 +45,26 @@ class ConstraintDesignPoint:
     mode: str
     mach: object
     altitude_m: object
+    case: str = "generic"
     load_factor: object = 1.0
     beta: object = 1.0
     alpha: object = 1.0
     climb_rate_m_s: object = 0.0
     acceleration_m_s2: object = 0.0
+    initial_mach: object = None
+    final_mach: object = None
+    acceleration_time_s: object = 30.0
     drag_polar_k1: object = 0.05
     drag_polar_k2: object = 0.0
     cd0: object = 0.025
+    cl_max: object = 1.8
+    lift_coefficient: object = 0.5
+    ground_roll_m: object = 900.0
+    braking_roll_m: object = 800.0
+    friction_coefficient: object = 0.03
+    speed_ratio: object = 1.2
+    climb_angle_deg: object = 3.0
+    include_in_governing: bool = True
 
 
 @dataclass(frozen=True)
@@ -64,49 +88,98 @@ class ConstraintDiagramConfig:
 def default_constraint_design_points():
     return (
         ConstraintDesignPoint(
-            name="Cruise subsonic",
-            mode="fan",
-            mach=0.8,
-            altitude_m=30000.0 * u.foot,
-            cd0=0.026,
-        ),
-        ConstraintDesignPoint(
-            name="Cruise supersonic",
+            name="Case 1: constant-altitude/speed cruise",
             mode="fan_ab",
-            mach=1.6,
-            altitude_m=45000.0 * u.foot,
+            mach=3.0,
+            altitude_m=60000.0 * u.foot,
+            case="generic",
             cd0=0.032,
         ),
         ConstraintDesignPoint(
-            name="Cruise hypersonic",
-            mode="ramjet",
-            mach=5.0,
-            altitude_m=80000.0 * u.foot,
-            cd0=0.045,
-        ),
-        ConstraintDesignPoint(
-            name="Climb 10k subsonic",
-            mode="fan",
-            mach=0.55,
-            altitude_m=10000.0 * u.foot,
-            climb_rate_m_s=10.0,
-            cd0=0.028,
-        ),
-        ConstraintDesignPoint(
-            name="Climb 30k supersonic",
+            name="Case 2: constant-speed climb",
             mode="fan_ab",
-            mach=1.3,
-            altitude_m=30000.0 * u.foot,
+            mach=3.0,
+            altitude_m=60000.0 * u.foot,
+            case="generic",
             climb_rate_m_s=20.0,
             cd0=0.034,
         ),
         ConstraintDesignPoint(
-            name="Climb 50k hypersonic",
+            name="Case 3: constant-altitude/speed turn",
+            mode="fan",
+            mach=0.9,
+            altitude_m=15000.0 * u.foot,
+            case="generic",
+            load_factor=2.5,
+            cd0=0.028,
+        ),
+        ConstraintDesignPoint(
+            name="Case 4: horizontal acceleration",
+            mode="fan_ab",
+            mach=1.2,
+            altitude_m=30000.0 * u.foot,
+            case="horizontal_acceleration",
+            initial_mach=0.8,
+            final_mach=1.6,
+            acceleration_time_s=60.0,
+            cd0=0.034,
+        ),
+        ConstraintDesignPoint(
+            name="Case 5: takeoff ground roll ideal",
+            mode="fan",
+            mach=0.25,
+            altitude_m=0.0,
+            case="takeoff_ground_roll_ideal",
+            cl_max=1.8,
+            ground_roll_m=900.0,
+            speed_ratio=1.2,
+            cd0=0.040,
+        ),
+        ConstraintDesignPoint(
+            name="Case 6: takeoff ground roll",
+            mode="fan",
+            mach=0.25,
+            altitude_m=0.0,
+            case="takeoff_ground_roll",
+            cl_max=1.8,
+            ground_roll_m=900.0,
+            friction_coefficient=0.03,
+            speed_ratio=1.2,
+            cd0=0.040,
+        ),
+        ConstraintDesignPoint(
+            name="Case 7: braking roll",
+            mode="fan",
+            mach=0.22,
+            altitude_m=0.0,
+            case="braking_roll",
+            alpha=-1.0,
+            cl_max=2.0,
+            braking_roll_m=800.0,
+            friction_coefficient=0.35,
+            speed_ratio=1.3,
+            cd0=0.050,
+        ),
+        ConstraintDesignPoint(
+            name="Case 8: service ceiling",
             mode="ramjet",
-            mach=3.5,
-            altitude_m=50000.0 * u.foot,
-            climb_rate_m_s=30.0,
-            cd0=0.043,
+            mach=3.0,
+            altitude_m=80000.0 * u.foot,
+            case="service_ceiling",
+            lift_coefficient=0.5,
+            climb_rate_m_s=0.508,
+            cd0=0.045,
+        ),
+        ConstraintDesignPoint(
+            name="Case 9: takeoff climb angle",
+            mode="fan",
+            mach=0.25,
+            altitude_m=0.0,
+            case="takeoff_climb_angle",
+            cl_max=1.8,
+            speed_ratio=1.2,
+            climb_angle_deg=3.0,
+            cd0=0.040,
         ),
     )
 
@@ -149,9 +222,180 @@ def pycycle_design_point_thrust_N(engine_deck_rows, design_point, thrust_scale=1
 
 def design_point_flight_condition(design_point):
     atmosphere = asb.Atmosphere(altitude=design_point.altitude_m)
-    velocity = design_point.mach * atmosphere.speed_of_sound()
-    dynamic_pressure = 0.5 * atmosphere.density() * velocity**2
-    return velocity, dynamic_pressure
+    velocity_m_s = design_point.mach * atmosphere.speed_of_sound()
+    dynamic_pressure_Pa = 0.5 * atmosphere.density() * velocity_m_s**2
+    return velocity_m_s, dynamic_pressure_Pa
+
+
+def required_tw_for_design_point(design_point, wing_loading_N_m2):
+    """Return required sea-level static T/W for one literature constraint case."""
+    atmosphere = asb.Atmosphere(altitude=design_point.altitude_m)
+    density_kg_m3 = atmosphere.density()
+    gravity_m_s2 = 9.80665
+    cd0 = design_point.cd0
+    beta = design_point.beta
+    alpha = design_point.alpha
+    k1 = design_point.drag_polar_k1
+    k2 = design_point.drag_polar_k2
+
+    if design_point.case == "horizontal_acceleration":
+        initial_mach = design_point.initial_mach
+        final_mach = design_point.final_mach
+        if initial_mach is None or final_mach is None:
+            raise ValueError(
+                f"{design_point.name} must define initial_mach and final_mach."
+            )
+        speed_of_sound_m_s = atmosphere.speed_of_sound()
+        initial_velocity_m_s = initial_mach * speed_of_sound_m_s
+        final_velocity_m_s = final_mach * speed_of_sound_m_s
+        velocity_m_s = 0.5 * (initial_velocity_m_s + final_velocity_m_s)
+        dynamic_pressure_Pa = 0.5 * density_kg_m3 * velocity_m_s**2
+        acceleration_m_s2 = (
+            (final_velocity_m_s - initial_velocity_m_s)
+            / design_point.acceleration_time_s
+        )
+        return design_point_thrust_to_weight_from_wing_loading(
+            wing_loading_N_m2=wing_loading_N_m2,
+            dynamic_pressure_Pa=dynamic_pressure_Pa,
+            velocity_m_s=velocity_m_s,
+            installed_full_throttle_thrust_lapse=alpha,
+            instantaneous_weight_fraction=beta,
+            load_factor=1.0,
+            drag_polar_k1=k1,
+            drag_polar_k2=k2,
+            zero_lift_drag_coefficient=cd0,
+            acceleration_m_s2=acceleration_m_s2,
+        )
+
+    if design_point.case == "takeoff_ground_roll_ideal":
+        return (
+            beta**2
+            / alpha
+            * design_point.speed_ratio**2
+            / (
+                design_point.ground_roll_m
+                * density_kg_m3
+                * gravity_m_s2
+                * design_point.cl_max
+            )
+            * wing_loading_N_m2
+        )
+
+    if design_point.case == "takeoff_ground_roll":
+        xi_to = cd0 - design_point.friction_coefficient * design_point.cl_max
+        ideal = (
+            beta**2
+            / alpha
+            * design_point.speed_ratio**2
+            / (
+                design_point.ground_roll_m
+                * density_kg_m3
+                * gravity_m_s2
+                * design_point.cl_max
+            )
+            * wing_loading_N_m2
+        )
+        exponent = (
+            design_point.ground_roll_m
+            * density_kg_m3
+            * gravity_m_s2
+            * xi_to
+            / (beta * wing_loading_N_m2)
+        )
+        denominator = 1.0 - np.exp(-exponent)
+        full = (
+            beta
+            / alpha
+            * (
+                design_point.friction_coefficient
+                + design_point.speed_ratio**2
+                / design_point.cl_max
+                * xi_to
+                / denominator
+            )
+        )
+        return np.where(np.abs(xi_to) < 1e-9, ideal, full)
+
+    if design_point.case == "braking_roll":
+        reverse_thrust_lapse = max(abs(alpha), 1e-9)
+        ideal = (
+            beta**2
+            / reverse_thrust_lapse
+            * design_point.speed_ratio**2
+            / (
+                design_point.braking_roll_m
+                * density_kg_m3
+                * gravity_m_s2
+                * design_point.cl_max
+            )
+            * wing_loading_N_m2
+        )
+        xi_l = cd0 - design_point.friction_coefficient * design_point.cl_max
+        exponent = (
+            design_point.braking_roll_m
+            * density_kg_m3
+            * gravity_m_s2
+            * xi_l
+            / (beta * wing_loading_N_m2)
+        )
+        denominator = np.exp(exponent) - 1.0
+        full = (
+            beta
+            / reverse_thrust_lapse
+            * (
+                design_point.speed_ratio**2
+                / design_point.cl_max
+                * xi_l
+                / denominator
+                - design_point.friction_coefficient
+            )
+        )
+        return np.maximum(np.where(np.abs(xi_l) < 1e-9, ideal, full), 0.0)
+
+    if design_point.case == "service_ceiling":
+        lift_coefficient = design_point.lift_coefficient
+        velocity_m_s = np.sqrt(
+            2.0 * beta * wing_loading_N_m2 / (density_kg_m3 * lift_coefficient)
+        )
+        return (
+            beta
+            / alpha
+            * (
+                k1 * lift_coefficient
+                + k2
+                + cd0 / lift_coefficient
+                + design_point.climb_rate_m_s / velocity_m_s
+            )
+        )
+
+    if design_point.case == "takeoff_climb_angle":
+        lift_coefficient = design_point.cl_max / design_point.speed_ratio**2
+        return (
+            beta
+            / alpha
+            * (
+                k1 * lift_coefficient
+                + k2
+                + cd0 / lift_coefficient
+                + np.sin(np.radians(design_point.climb_angle_deg))
+            )
+            * np.ones_like(wing_loading_N_m2)
+        )
+
+    velocity_m_s, dynamic_pressure_Pa = design_point_flight_condition(design_point)
+    return design_point_thrust_to_weight_from_wing_loading(
+        wing_loading_N_m2=wing_loading_N_m2,
+        dynamic_pressure_Pa=dynamic_pressure_Pa,
+        velocity_m_s=velocity_m_s,
+        installed_full_throttle_thrust_lapse=alpha,
+        instantaneous_weight_fraction=beta,
+        load_factor=design_point.load_factor,
+        drag_polar_k1=k1,
+        drag_polar_k2=k2,
+        zero_lift_drag_coefficient=cd0,
+        climb_rate_m_s=design_point.climb_rate_m_s,
+        acceleration_m_s2=design_point.acceleration_m_s2,
+    )
 
 
 def weight_inputs_from_coupled_sizing(takeoff_mass_kg, planform_area_m2, config):
@@ -279,43 +523,22 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
 
     curves = {}
     for design_point in design_points:
-        velocity, dynamic_pressure = design_point_flight_condition(design_point)
-        required_tw = design_point_thrust_to_weight_from_wing_loading(
-            wing_loading=wing_loading_N_m2,
-            dynamic_pressure=dynamic_pressure,
-            velocity=velocity,
-            installed_full_throttle_thrust_lapse=design_point.alpha,
-            instantaneous_weight_fraction=design_point.beta,
-            load_factor=design_point.load_factor,
-            drag_polar_k1=design_point.drag_polar_k1,
-            drag_polar_k2=design_point.drag_polar_k2,
-            zero_lift_drag_coefficient=design_point.cd0,
-            climb_rate=design_point.climb_rate_m_s,
-            acceleration=design_point.acceleration_m_s2,
-        )
+        velocity_m_s, dynamic_pressure_Pa = design_point_flight_condition(design_point)
+        required_tw = required_tw_for_design_point(design_point, wing_loading_N_m2)
         available_thrust_N = pycycle_design_point_thrust_N(
             engine_deck_rows,
             design_point,
             thrust_scale=config.thrust_scale,
         )
         available_tw = available_thrust_N / coupled["takeoff_weight_N"]
-        required_at_coupled_wing_loading = design_point_thrust_to_weight_from_wing_loading(
-            wing_loading=coupled["wing_loading_N_m2"],
-            dynamic_pressure=dynamic_pressure,
-            velocity=velocity,
-            installed_full_throttle_thrust_lapse=design_point.alpha,
-            instantaneous_weight_fraction=design_point.beta,
-            load_factor=design_point.load_factor,
-            drag_polar_k1=design_point.drag_polar_k1,
-            drag_polar_k2=design_point.drag_polar_k2,
-            zero_lift_drag_coefficient=design_point.cd0,
-            climb_rate=design_point.climb_rate_m_s,
-            acceleration=design_point.acceleration_m_s2,
+        required_at_coupled_wing_loading = required_tw_for_design_point(
+            design_point,
+            coupled["wing_loading_N_m2"],
         )
         curves[design_point.name] = {
             "design_point": design_point,
-            "velocity_m_s": velocity,
-            "dynamic_pressure_Pa": dynamic_pressure,
+            "velocity_m_s": velocity_m_s,
+            "dynamic_pressure_Pa": dynamic_pressure_Pa,
             "required_thrust_to_weight": required_tw,
             "available_thrust_N": available_thrust_N,
             "available_thrust_to_weight": available_tw,
@@ -324,7 +547,11 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
         }
 
     required_stack = np.array(
-        [curves[design_point.name]["required_thrust_to_weight"] for design_point in design_points]
+        [
+            curves[design_point.name]["required_thrust_to_weight"]
+            for design_point in design_points
+            if design_point.include_in_governing
+        ]
     )
     governing_required_tw = np.max(required_stack, axis=0)
     coupled["required_thrust_to_weight"] = np.max(
@@ -332,6 +559,7 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
             [
                 curves[design_point.name]["required_at_coupled_wing_loading"]
                 for design_point in design_points
+                if design_point.include_in_governing
             ]
         )
     )
