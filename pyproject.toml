@@ -1,3 +1,24 @@
 [build-system]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools"]
+
+[project]
+name = "duality-sizing"
+version = "0.1.0"
+description = "Duality engine cycle and aircraft constraint-sizing workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aerosandbox",
+    "matplotlib",
+    "numpy",
+    "om-pycycle",
+    "openmdao",
+]
+
+[tool.setuptools.packages.find]
+include = [
+    "coupled_mission*",
+    "example_cycles*",
+    "sizing*",
+]
