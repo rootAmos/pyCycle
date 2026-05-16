@@ -48,7 +48,7 @@ class AeroMissionConfig:
     waypoint_mass_fraction: tuple[float, ...] | None = None
     segment_duration_s: tuple[float, ...] = (600.0, 1800.0, 3600.0, 1200.0)
     mode: tuple[str, ...] = ("fan", "fan_ab", "ramjet", "ramjet", "fan")
-    payload_mass_kg: float = 250.0
+    payload_mass_kg: float = 6.0 * 200.0 * 0.45359237
     fixed_empty_mass_kg: float = 1200.0
     reserve_fuel_kg: float = 50.0
     oswald_efficiency: float = 0.78

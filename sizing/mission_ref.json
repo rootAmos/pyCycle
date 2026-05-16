@@ -1,0 +1,208 @@
+{
+  "mission_name": "astro_m_concorde_inspired_mach3_reference",
+  "aircraft": "Astro M",
+  "mission_type": "supersonic_transport_reference",
+  "units": {
+    "altitude": "ft",
+    "distance": "nmi",
+    "speed": "Mach",
+    "time": "min"
+  },
+  "assumptions": {
+    "profile_basis": "Concorde-style climb and transonic acceleration with additional Mach 3 acceleration and cruise phases",
+    "cruise_type": "cruise_climb",
+    "reserve_policy": "100 nmi diversion plus 45 minute holding",
+    "reheat_used_for_takeoff": true,
+    "reheat_used_for_transonic_acceleration": true,
+    "reheat_used_for_mach3_acceleration": true
+  },
+  "segments": [
+    {
+      "name": "taxi_takeoff",
+      "segment_type": "takeoff",
+      "start_altitude_ft": 0,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.0,
+      "end_mach": 0.35,
+      "distance_nmi": 5,
+      "reheat": true,
+      "notes": "High thrust takeoff segment"
+    },
+    {
+      "name": "subsonic_climb",
+      "segment_type": "climb",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 25000,
+      "start_mach": 0.35,
+      "end_mach": 0.93,
+      "distance_nmi": 120,
+      "reheat": false,
+      "notes": "Subsonic climb before transonic acceleration"
+    },
+    {
+      "name": "transonic_acceleration_climb",
+      "segment_type": "accelerating_climb",
+      "start_altitude_ft": 25000,
+      "end_altitude_ft": 43000,
+      "start_mach": 0.93,
+      "end_mach": 1.70,
+      "distance_nmi": 200,
+      "reheat": true,
+      "notes": "Concorde-like transonic acceleration and climb"
+    },
+    {
+      "name": "mach2_acceleration_climb",
+      "segment_type": "accelerating_climb",
+      "start_altitude_ft": 43000,
+      "end_altitude_ft": 50000,
+      "start_mach": 1.70,
+      "end_mach": 2.02,
+      "distance_nmi": 180,
+      "reheat": false,
+      "notes": "Dry acceleration to Mach 2 condition"
+    },
+    {
+      "name": "mach3_acceleration_climb",
+      "segment_type": "accelerating_climb",
+      "start_altitude_ft": 50000,
+      "end_altitude_ft": 70000,
+      "start_mach": 2.02,
+      "end_mach": 3.00,
+      "distance_nmi": 350,
+      "reheat": true,
+      "notes": "High Mach acceleration and climb phase"
+    },
+    {
+      "name": "mach3_cruise_climb",
+      "segment_type": "cruise_climb",
+      "start_altitude_ft": 70000,
+      "end_altitude_ft": 80000,
+      "start_mach": 3.00,
+      "end_mach": 3.00,
+      "distance_nmi": 1800,
+      "reheat": false,
+      "notes": "Primary Mach 3 cruise segment"
+    },
+    {
+      "name": "descent_deceleration",
+      "segment_type": "descent",
+      "start_altitude_ft": 80000,
+      "end_altitude_ft": 10000,
+      "start_mach": 3.00,
+      "end_mach": 0.80,
+      "distance_nmi": 300,
+      "reheat": false,
+      "notes": "Supersonic deceleration and descent"
+    },
+    {
+      "name": "terminal_approach",
+      "segment_type": "approach",
+      "start_altitude_ft": 10000,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.80,
+      "end_mach": 0.25,
+      "distance_nmi": 40,
+      "reheat": false,
+      "notes": "Terminal area approach"
+    },
+    {
+      "name": "landing_circuit",
+      "segment_type": "circuit",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.20,
+      "end_mach": 0.20,
+      "time_min": 8,
+      "reheat": false,
+      "notes": "Traffic pattern / landing circuit"
+    },
+    {
+      "name": "landing",
+      "segment_type": "landing",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 0,
+      "start_mach": 0.20,
+      "end_mach": 0.0,
+      "distance_nmi": 5,
+      "reheat": false,
+      "notes": "Final approach and landing"
+    },
+
+    {
+      "name": "reserve_climb",
+      "segment_type": "climb",
+      "start_altitude_ft": 0,
+      "end_altitude_ft": 10000,
+      "start_mach": 0.0,
+      "end_mach": 0.45,
+      "distance_nmi": 20,
+      "reheat": false,
+      "notes": "Reserve diversion climb"
+    },
+    {
+      "name": "reserve_cruise_diversion",
+      "segment_type": "cruise",
+      "start_altitude_ft": 10000,
+      "end_altitude_ft": 10000,
+      "start_mach": 0.45,
+      "end_mach": 0.45,
+      "distance_nmi": 100,
+      "reheat": false,
+      "notes": "Reserve diversion cruise"
+    },
+    {
+      "name": "reserve_descent",
+      "segment_type": "descent",
+      "start_altitude_ft": 10000,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.45,
+      "end_mach": 0.25,
+      "distance_nmi": 25,
+      "reheat": false,
+      "notes": "Reserve diversion descent"
+    },
+    {
+      "name": "reserve_holding",
+      "segment_type": "holding",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.25,
+      "end_mach": 0.25,
+      "time_min": 45,
+      "reheat": false,
+      "notes": "Reserve holding pattern"
+    },
+    {
+      "name": "reserve_circuit",
+      "segment_type": "circuit",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 1500,
+      "start_mach": 0.20,
+      "end_mach": 0.20,
+      "time_min": 8,
+      "reheat": false,
+      "notes": "Reserve landing circuit"
+    },
+    {
+      "name": "reserve_final_approach_landing",
+      "segment_type": "landing",
+      "start_altitude_ft": 1500,
+      "end_altitude_ft": 0,
+      "start_mach": 0.20,
+      "end_mach": 0.0,
+      "distance_nmi": 5,
+      "reheat": false,
+      "notes": "Reserve final approach and landing"
+    }
+  ],
+  "summary": {
+    "primary_mission_distance_nmi": 3000,
+    "reserve_distance_nmi": 150,
+    "total_distance_nmi_excluding_holding": 3150,
+    "reserve_holding_time_min": 45,
+    "max_mach": 3.0,
+    "initial_cruise_altitude_ft": 70000,
+    "final_cruise_altitude_ft": 80000,
+    "primary_cruise_mach": 3.0
+  }
+}

@@ -19,6 +19,13 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = [
     "coupled_mission*",
+    "data*",
     "example_cycles*",
     "sizing*",
+]
+
+[tool.setuptools.package-data]
+"data.aero" = [
+    "cla_theory_ratio/*.csv",
+    "leading_edge_suction/*.csv",
 ]

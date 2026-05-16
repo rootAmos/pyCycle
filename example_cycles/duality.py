@@ -828,6 +828,7 @@ def plot_cycle_map(prob):
     all_data = {}
     for pt, cfg in MODES.items():
         Tt, Ts, Pt, Ps, MN, A = [], [], [], [], [], []   # lists of per-station values
+        fan_power_MW = {}
 
         for s in cfg['stations']:
             # Full OpenMDAO variable path:  e.g., 'DESIGN.fan1.Fl_O:tot:T'
@@ -855,6 +856,14 @@ def plot_cycle_map(prob):
             MN.append(_get('stat:MN'))                    # Mach number        (dimensionless)
             A.append( _get('stat:area', units='m**2'))    # cross-section area (m²)
 
+        for fan_name in ('fan1', 'fan2'):
+            try:
+                fan_power_MW[fan_name] = abs(
+                    prob.get_val(f'{pt}.{fan_name}.power', units='W')[0]
+                ) / 1.0e6
+            except Exception:
+                fan_power_MW[fan_name] = float('nan')
+
         # Store as numpy arrays for efficient masking / ylim computation.
         Tt = np.array(Tt)
         Ts = np.array(Ts)
@@ -863,7 +872,15 @@ def plot_cycle_map(prob):
         MN = np.array(MN)
         A = np.array(A)
 
-        all_data[pt] = dict(Tt=Tt, Ts=Ts, Pt=Pt, Ps=Ps, MN=MN, A=A)
+        all_data[pt] = dict(
+            Tt=Tt,
+            Ts=Ts,
+            Pt=Pt,
+            Ps=Ps,
+            MN=MN,
+            A=A,
+            fan_power_MW=fan_power_MW,
+        )
 
     # -------------------------------------------------------------------------
     # COMPUTE Y-AXIS LIMITS (with 8% padding so lines don't touch the border)
@@ -969,6 +986,27 @@ def plot_cycle_map(prob):
                 ax.set_ylabel(ROW_LABELS[row], fontsize=9)  # y-label only on leftmost column
             if row == 0:
                 ax.set_title(cfg['label'], fontsize=8, fontweight='bold', pad=6)  # title on top row
+                for fan_name, station_name in (('fan1', 'fan1.Fl_O'), ('fan2', 'fan2.Fl_O')):
+                    power_MW = d['fan_power_MW'].get(fan_name, float('nan'))
+                    if np.isfinite(power_MW) and station_name in cfg['stations']:
+                        station_idx = cfg['stations'].index(station_name)
+                        ax.annotate(
+                            f'{power_MW:.2f} MW',
+                            xy=(xs[station_idx], y_tot[station_idx]),
+                            xytext=(0, 12),
+                            textcoords='offset points',
+                            ha='center',
+                            va='bottom',
+                            fontsize=7,
+                            color='#333333',
+                            bbox=dict(
+                                boxstyle='round,pad=0.18',
+                                fc='white',
+                                ec='#999999',
+                                alpha=0.82,
+                            ),
+                            zorder=5,
+                        )
             if col == 0 and k_stat is not None:
                 ax.legend(fontsize=7, loc='best')  # legend only on left column, rows with two lines
 

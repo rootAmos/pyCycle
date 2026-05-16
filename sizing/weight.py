@@ -88,7 +88,7 @@ class WeightInputs:
     uninstalled_avionics_weight_lb: object = 800.0
 
     number_crew: object = 1.0
-    number_passengers: object = 6.0
+    number_passengers: object = 5.0
     crew_weight_lb: object = 200.0
     passenger_weight_lb: object = 200.0
     cargo_weight_lb: object = 0.0
