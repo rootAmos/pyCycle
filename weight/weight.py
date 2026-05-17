@@ -3,13 +3,23 @@
 from dataclasses import dataclass
 from pathlib import Path
 import csv
+import sys
 
 import aerosandbox as asb
 import aerosandbox.tools.units as u
 
-from . import comp_weights_flops as flops
-from . import comp_weights_gasp as gasp
-from . import comp_weights_raymer as raymer
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+try:
+    from . import comp_weights_flops as flops
+    from . import comp_weights_gasp as gasp
+    from . import comp_weights_raymer as raymer
+except ImportError:
+    from weight import comp_weights_flops as flops
+    from weight import comp_weights_gasp as gasp
+    from weight import comp_weights_raymer as raymer
 
 
 WeightInputs = raymer.WeightInputs
@@ -311,10 +321,7 @@ def write_aircraft_weight_breakdown_csv(aircraft, output_csv):
 
 def main():
     output_csv = Path("outputs/weights/weight_breakdown.csv")
-    try:
-        from .aircraft import Aircraft
-    except ImportError:
-        from aircraft import Aircraft
+    from sizing.aircraft import Aircraft
 
     aircraft = Aircraft.from_json(
         mass_kg=4000.0,

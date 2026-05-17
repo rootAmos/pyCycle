@@ -341,7 +341,7 @@ if __name__ == "__main__":
                       ("FPT",        base.eta_fpt)]:
         eta_re = reynolds_efficiency_correction(eta, r)
         print(f"  {name:11s}: eta_base={eta:.3f}  eta_Re_corrected={eta_re:.3f}  "
-              f"(Δ = {(eta_re-eta)*100:+.2f} pt)")
+              f"(delta = {(eta_re - eta) * 100:+.2f} pt)")
 
     # --- Step 5: parametric sweep of SFC vs target power ---
     print("\n=== SFC sweep across power class ===")
