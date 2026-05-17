@@ -9,7 +9,7 @@ This package is the boundary between:
 The first-pass workflow is deck-based:
 
 1. Use pyCycle to generate an engine deck in SI units.
-2. Use `scripts/export_tank_deck.py` to generate a HyTank/LNGTank deck.
+2. Generate or provide a tank deck if the old deck-based tank workflow is still needed.
 3. Use `EngineDeck` and tank deck CSVs inside an AeroSandbox mission model.
 
 This avoids calling OpenMDAO inside every AeroSandbox optimizer evaluation.
@@ -78,7 +78,7 @@ Once a pyCycle grid is generated, replace this with a smoother fitted surrogate.
 From the pyCycle repo root:
 
 ```powershell
-python scripts\export_tank_deck.py --propellant LNG --out coupled_mission\data\tank_deck.csv
+python coupled_mission\tank_deck.py
 ```
 
 `TankCase` currently supports constant fuel extraction, heater power, and

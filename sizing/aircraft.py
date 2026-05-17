@@ -13,10 +13,10 @@ DEFAULT_AIRCRAFT_JSON = Path(__file__).with_name("aircraft.json")
 
 try:
     from .volume import AircraftVolumeInputs
-    from .comp_weights_raymer import WeightInputs
 except ImportError:
     from volume import AircraftVolumeInputs
-    from comp_weights_raymer import WeightInputs
+
+from weight.comp_weights_raymer import WeightInputs
 
 
 @dataclass(frozen=True)

@@ -18,8 +18,8 @@ from sizing.constraint_diagram import (
     ConstraintDiagramConfig,
     engine_deck_aircraft_sizing,
 )
-from sizing.electric_machines import build_duality_powertrain_deck
-from scripts.scaled_turboshaft_deck import (
+from propulsion.motors.electric_machines import build_duality_powertrain_deck
+from propulsion.turbines.scaled_turboshaft_deck import (
     ScaledTurboshaftDeck,
     expand_turboshaft_deck_altitude,
     load_turboshaft_csv,

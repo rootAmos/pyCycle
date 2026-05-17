@@ -7,14 +7,9 @@ import csv
 import aerosandbox as asb
 import aerosandbox.tools.units as u
 
-try:
-    from . import comp_weights_flops as flops
-    from . import comp_weights_gasp as gasp
-    from . import comp_weights_raymer as raymer
-except ImportError:
-    import comp_weights_flops as flops
-    import comp_weights_gasp as gasp
-    import comp_weights_raymer as raymer
+from . import comp_weights_flops as flops
+from . import comp_weights_gasp as gasp
+from . import comp_weights_raymer as raymer
 
 
 WeightInputs = raymer.WeightInputs

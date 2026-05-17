@@ -30,7 +30,6 @@ try:
     )
     from .constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
-    from .weight import _weight_breakdown
 except ImportError:
     from aircraft import (
         Aircraft,
@@ -47,7 +46,8 @@ except ImportError:
     )
     from constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
-    from weight import _weight_breakdown
+
+from weight import _weight_breakdown
 
 
 @dataclass(frozen=True)
