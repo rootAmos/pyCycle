@@ -243,6 +243,7 @@ def default_constraint_design_points():
             mach=0.25,
             altitude_m=0.0,
             case="takeoff_climb_angle",
+            alpha=1.0 - 0.25 / 3.0,
             cl_max=1.8,
             speed_ratio=1.2,
             climb_angle_deg=1.0,

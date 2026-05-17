@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import csv
+import math
 
 
 def _isa_density_and_speed_of_sound(altitude_m):
@@ -162,7 +163,7 @@ def preview_pycycle_engine_deck_setup(
     }
 
 
-def _set_duality_initial_values(prob, duality, d3):
+def _set_duality_initial_values(prob, duality, d3, fixed_fan_inlet_area=False):
     c = duality.CRUISE_CONDITIONS
     prob.set_val("DESIGN_mode2.fc.alt", c["mode2"]["alt_ft"], units="ft")
     prob.set_val("DESIGN_mode2.fc.MN", c["mode2"]["mach"])
@@ -176,17 +177,23 @@ def _set_duality_initial_values(prob, duality, d3):
     prob["DESIGN_mode2.fc.balance.Tt"] = c["mode2"]["Tt_degR"]
     prob.set_val("OD_mode1.balance.rhs:W", 118.000, units="inch**2")
     prob.set_val("OD_mode3.balance.rhs:W", d3["nozz"], units="inch**2")
-    prob.set_val("OD_mode1.balance.rhs:inlet_area", 0.55)
-    prob.set_val("OD_mode2.balance.rhs:inlet_area", 0.60)
+    if fixed_fan_inlet_area:
+        prob.set_val("OD_mode1.inlet.area", 260.0, units="inch**2")
+        prob.set_val("OD_mode2.inlet.area", 260.0, units="inch**2")
+    else:
+        prob.set_val("OD_mode1.balance.rhs:inlet_area", 0.55)
+        prob.set_val("OD_mode2.balance.rhs:inlet_area", 0.60)
     prob.set_val("OD_mode3.inlet.area", d3["inlet_area"], units="inch**2")
     prob.set_val("OD_mode3.bypass_duct.area", d3["bypass_duct"], units="inch**2")
     prob.set_val("OD_mode3.combustor.area", d3["combustor"], units="inch**2")
     prob["OD_mode1.balance.W"] = 27.0
-    prob["OD_mode1.balance.inlet_area"] = 260.0
+    if not fixed_fan_inlet_area:
+        prob["OD_mode1.balance.inlet_area"] = 260.0
     prob.set_val("OD_mode1.N_fan1", 5135.0, units="rpm")
     prob.set_val("OD_mode1.N_fan2", 4847.0, units="rpm")
     prob["OD_mode2.balance.W"] = 35.0
-    prob["OD_mode2.balance.inlet_area"] = 260.0
+    if not fixed_fan_inlet_area:
+        prob["OD_mode2.balance.inlet_area"] = 260.0
     prob["OD_mode2.balance.FAR"] = 0.035
     prob.set_val("OD_mode2.N_fan1", 6000.0, units="rpm")
     prob.set_val("OD_mode2.N_fan2", 6000.0, units="rpm")
@@ -194,6 +201,74 @@ def _set_duality_initial_values(prob, duality, d3):
     prob["OD_mode3.balance.FAR"] = d3["FAR"]
     prob["OD_mode3.fc.balance.Pt"] = d3["Pt"]
     prob["OD_mode3.fc.balance.Tt"] = d3["Tt"]
+
+
+def _circle_area_in2(diameter_in):
+    return math.pi * float(diameter_in) ** 2 / 4.0
+
+
+def _geometry_case_uses_fixed_inlet_area(case):
+    return any(
+        case.get(key) is not None
+        for key in (
+            "mode1_inlet_area_in2",
+            "mode2_inlet_area_in2",
+            "mode1_inlet_diameter_in",
+            "mode2_inlet_diameter_in",
+        )
+    )
+
+
+def _normalize_geometry_case(case):
+    case = dict(case)
+    for diameter_key, area_key in (
+        ("mode1_inlet_diameter_in", "mode1_inlet_area_in2"),
+        ("mode2_inlet_diameter_in", "mode2_inlet_area_in2"),
+        ("mode1_nozzle_throat_diameter_in", "mode1_nozzle_throat_area_in2"),
+    ):
+        if case.get(diameter_key) is not None:
+            case[area_key] = _circle_area_in2(case[diameter_key])
+    return case
+
+
+def _apply_duality_geometry_case(prob, case, fixed_fan_inlet_area=False):
+    for name, default in {
+        "case_name": "baseline",
+        "design_fan1_pr": None,
+        "design_fan2_pr": None,
+        "design_inlet_mn": None,
+        "design_fan1_mn": None,
+        "design_fan2_mn": None,
+        "design_ab_mn": None,
+        "mode1_inlet_diameter_in": None,
+        "mode2_inlet_diameter_in": None,
+        "mode1_inlet_area_in2": None,
+        "mode2_inlet_area_in2": None,
+        "mode1_nozzle_throat_diameter_in": None,
+        "mode1_nozzle_throat_area_in2": None,
+        "mode1_inlet_exit_mn": None,
+        "mode2_inlet_exit_mn": None,
+    }.items():
+        case.setdefault(name, default)
+    setters = {
+        "design_fan1_pr": ("DESIGN_mode2.fan1.PR", None),
+        "design_fan2_pr": ("DESIGN_mode2.fan2.PR", None),
+        "design_inlet_mn": ("DESIGN_mode2.inlet.MN", None),
+        "design_fan1_mn": ("DESIGN_mode2.fan1.MN", None),
+        "design_fan2_mn": ("DESIGN_mode2.fan2.MN", None),
+        "design_ab_mn": ("DESIGN_mode2.ab.MN", None),
+        "mode1_nozzle_throat_area_in2": ("OD_mode1.balance.rhs:W", "inch**2"),
+        "mode1_inlet_area_in2": ("OD_mode1.inlet.area", "inch**2"),
+        "mode2_inlet_area_in2": ("OD_mode2.inlet.area", "inch**2"),
+    }
+    if not fixed_fan_inlet_area:
+        setters.update({
+            "mode1_inlet_exit_mn": ("OD_mode1.balance.rhs:inlet_area", None),
+            "mode2_inlet_exit_mn": ("OD_mode2.balance.rhs:inlet_area", None),
+        })
+    for key, (path, units) in setters.items():
+        if case[key] is not None:
+            prob.set_val(path, float(case[key]), units=units) if units else prob.set_val(path, float(case[key]))
 
 
 def _set_duality_point_condition(prob, point_name, altitude_ft, mach):
@@ -214,7 +289,7 @@ def _set_duality_power_setting(prob, point_name, mode, shaft_power_fraction, max
     prob.set_val(f"{point_name}.N_fan2", base_speeds[1] * speed_scale, units="rpm")
 
 
-def _duality_engine_record(prob, point_name, mode, throttle=1.0):
+def _duality_engine_record(prob, point_name, mode, throttle=1.0, requested_shaft_power_W=0.0):
     hp_to_W = 745.6998715822702
     fan1_power_W = fan2_power_W = fan1_speed = fan2_speed = fan1_area = fan2_area = 0.0
     fuel_flow = 0.0
@@ -237,6 +312,7 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
         "altitude_m": _scalar(prob, f"{point_name}.fc.alt", units="m"),
         "throttle": throttle,
         "shaft_power_fraction": throttle if mode in {"fan", "fan_ab"} else 0.0,
+        "requested_total_fan_shaft_power_W": requested_shaft_power_W if mode in {"fan", "fan_ab"} else 0.0,
         "thrust_N": _scalar(prob, f"{point_name}.perf.Fn", units="N"),
         "fuel_flow_kg_s": fuel_flow,
         "fan1_speed_rpm": fan1_speed,
@@ -248,6 +324,7 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
         "fan_power_delta_W": abs(fan1_power_W - fan2_power_W),
         "fan_power_delta_fraction": abs(fan1_power_W - fan2_power_W) / max_fan_power if max_fan_power > 0.0 else 0.0,
         "fan1_power_fraction": fan1_power_W / total_fan_power if total_fan_power > 0.0 else 0.0,
+        "actual_total_fan_shaft_power_W": total_fan_power,
         "fan1_area_m2": fan1_area,
         "fan2_area_m2": fan2_area,
         "inlet_area_m2": _scalar(prob, f"{point_name}.inlet.Fl_O:stat:area", units="m**2"),
@@ -288,6 +365,8 @@ def _engine_deck_row_to_imperial(row):
         "fuel_flow_kg_s": ("fuel_flow_lbm_s", 2.2046226218488),
         "fan1_shaft_power_W": ("fan1_shaft_power_hp", 0.001341022089595),
         "fan2_shaft_power_W": ("fan2_shaft_power_hp", 0.001341022089595),
+        "requested_total_fan_shaft_power_W": ("requested_total_fan_shaft_power_hp", 0.001341022089595),
+        "actual_total_fan_shaft_power_W": ("actual_total_fan_shaft_power_hp", 0.001341022089595),
         "fan_power_delta_W": ("fan_power_delta_hp", 0.001341022089595),
         "fan1_area_m2": ("fan1_area_in2", 1550.0031000062),
         "fan2_area_m2": ("fan2_area_in2", 1550.0031000062),
@@ -313,6 +392,9 @@ def write_pycycle_engine_deck(
     altitudes_ft=None,
     mach_values=None,
     power_settings=(1.0,),
+    shaft_power_settings_W=None,
+    max_fan_shaft_power_W=None,
+    geometry_cases=None,
     max_cases=None,
     max_fan_speed_rpm=None,
     drag_points_by_condition=None,
@@ -332,6 +414,8 @@ def write_pycycle_engine_deck(
         if operating_points is None
         else _duality_conditions_from_operating_points(operating_points, max_cases=max_cases)
     )
+    geometry_cases = [_normalize_geometry_case(case) for case in (geometry_cases or [{"case_name": "baseline"}])]
+    fixed_fan_inlet_area = any(_geometry_case_uses_fixed_inlet_area(case) for case in geometry_cases)
     first_ramjet = next(((alt, mach) for alt, mach, _, mode in conditions if mode == "ramjet"), None)
     ramjet_thrust_lbf = (
         duality.PC24_SCALED_THRUST["mode3_ramjet"]
@@ -344,13 +428,26 @@ def write_pycycle_engine_deck(
         else duality._run_design_mode3()
     )
     prob = om.Problem()
-    prob.model = duality.MPDuality()
+    prob.model = duality.MPDuality(fixed_fan_inlet_area=fixed_fan_inlet_area)
     prob.setup()
-    _set_duality_initial_values(prob, duality, d3)
+    _set_duality_initial_values(prob, duality, d3, fixed_fan_inlet_area=fixed_fan_inlet_area)
     prob.set_solver_print(level=-1)
 
+    if shaft_power_settings_W is not None:
+        if max_fan_shaft_power_W is None or max_fan_shaft_power_W <= 0.0:
+            raise ValueError("max_fan_shaft_power_W must be positive when shaft_power_settings_W is provided.")
+        shaft_power_settings_W = tuple(float(power_W) for power_W in shaft_power_settings_W)
+        power_settings = tuple(power_W / float(max_fan_shaft_power_W) for power_W in shaft_power_settings_W)
+    else:
+        power_settings = tuple(float(setting) for setting in power_settings)
+
     fieldnames = [
-        "mode", "mach", "altitude_ft", "throttle", "shaft_power_fraction",
+        "geometry_case", "mode", "mach", "altitude_ft", "throttle", "shaft_power_fraction",
+        "design_fan1_pr", "design_fan2_pr", "design_inlet_mn", "design_fan1_mn",
+        "design_fan2_mn", "design_ab_mn", "mode1_nozzle_throat_area_in2",
+        "mode1_nozzle_throat_diameter_in", "mode1_inlet_area_in2", "mode2_inlet_area_in2",
+        "mode1_inlet_diameter_in", "mode2_inlet_diameter_in", "mode1_inlet_exit_mn", "mode2_inlet_exit_mn",
+        "requested_total_fan_shaft_power_hp", "actual_total_fan_shaft_power_hp",
         "thrust_lbf", "fuel_flow_lbm_s", "fan1_speed_rpm", "fan2_speed_rpm",
         "fan1_shaft_power_hp", "fan2_shaft_power_hp", "fan_speed_delta_rpm",
         "fan_speed_delta_fraction", "fan_power_delta_hp", "fan_power_delta_fraction",
@@ -368,51 +465,65 @@ def write_pycycle_engine_deck(
     with output_csv.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        for altitude_ft, mach, point_name, mode in conditions:
-            if mode == "ramjet":
-                point_thrust_lbf = ramjet_thrust_lbf
-                if drag_points_by_condition is not None:
-                    point_thrust_lbf = drag_points_by_condition[_condition_key(altitude_ft, mach)]["required_thrust_N"] / 4.4482216152605
-                d3 = duality._run_design_mode3(alt_ft=altitude_ft, mach=mach, thrust_lbf=point_thrust_lbf)
-                _set_duality_initial_values(prob, duality, d3)
-            _set_duality_point_condition(prob, point_name, altitude_ft, mach)
-            for shaft_power_fraction in (power_settings if mode in {"fan", "fan_ab"} else (1.0,)):
-                _set_duality_power_setting(
-                    prob,
-                    point_name,
-                    mode,
-                    shaft_power_fraction,
-                    max_fan_speed_rpm=max_fan_speed_rpm,
-                )
-                try:
-                    prob.run_model()
-                except Exception as error:
-                    row = {
-                        "mode": mode,
-                        "mach": mach,
-                        "altitude_ft": altitude_ft,
-                        "throttle": shaft_power_fraction,
-                        "shaft_power_fraction": shaft_power_fraction if mode in {"fan", "fan_ab"} else 0.0,
-                    }
-                    row.update(_duality_failed_convergence_record(point_name, error))
+        for geometry_case in geometry_cases:
+            geometry_case = dict(geometry_case)
+            for altitude_ft, mach, point_name, mode in conditions:
+                if mode == "ramjet":
+                    point_thrust_lbf = ramjet_thrust_lbf
+                    if drag_points_by_condition is not None:
+                        point_thrust_lbf = drag_points_by_condition[_condition_key(altitude_ft, mach)]["required_thrust_N"] / 4.4482216152605
+                    d3 = duality._run_design_mode3(alt_ft=altitude_ft, mach=mach, thrust_lbf=point_thrust_lbf)
+                _set_duality_initial_values(prob, duality, d3, fixed_fan_inlet_area=fixed_fan_inlet_area)
+                _apply_duality_geometry_case(prob, geometry_case, fixed_fan_inlet_area=fixed_fan_inlet_area)
+                _set_duality_point_condition(prob, point_name, altitude_ft, mach)
+                for shaft_power_fraction in (power_settings if mode in {"fan", "fan_ab"} else (1.0,)):
+                    requested_power_W = (
+                        shaft_power_fraction * float(max_fan_shaft_power_W)
+                        if mode in {"fan", "fan_ab"} and max_fan_shaft_power_W is not None
+                        else 0.0
+                    )
+                    _set_duality_power_setting(
+                        prob,
+                        point_name,
+                        mode,
+                        shaft_power_fraction,
+                        max_fan_speed_rpm=max_fan_speed_rpm,
+                    )
+                    row_case = {k: v for k, v in geometry_case.items() if k != "case_name"}
+                    row_case["geometry_case"] = geometry_case.get("case_name", "baseline")
+                    try:
+                        prob.run_model()
+                    except Exception as error:
+                        row = {
+                            **row_case,
+                            "mode": mode,
+                            "mach": mach,
+                            "altitude_ft": altitude_ft,
+                            "throttle": shaft_power_fraction,
+                            "shaft_power_fraction": shaft_power_fraction if mode in {"fan", "fan_ab"} else 0.0,
+                            "requested_total_fan_shaft_power_W": requested_power_W,
+                        }
+                        row.update(_duality_failed_convergence_record(point_name, error))
+                        if drag_points_by_condition is not None:
+                            row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
+                        writer.writerow(_engine_deck_row_to_imperial(row))
+                        stream.flush()
+                        continue
+                    row = _duality_engine_record(
+                        prob,
+                        point_name,
+                        mode,
+                        throttle=shaft_power_fraction if mode in {"fan", "fan_ab"} else 1.0,
+                        requested_shaft_power_W=requested_power_W,
+                    )
+                    row.update(row_case)
+                    row.update(_duality_convergence_record(prob, point_name))
                     if drag_points_by_condition is not None:
                         row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
-                    writer.writerow(_engine_deck_row_to_imperial(row))
+                    row = _engine_deck_row_to_imperial(row)
+                    rows.append(row)
+                    writer.writerow(row)
                     stream.flush()
-                    raise
-                row = _duality_engine_record(
-                    prob,
-                    point_name,
-                    mode,
-                    throttle=shaft_power_fraction if mode in {"fan", "fan_ab"} else 1.0,
-                )
-                row.update(_duality_convergence_record(prob, point_name))
-                if drag_points_by_condition is not None:
-                    row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
-                row = _engine_deck_row_to_imperial(row)
-                rows.append(row)
-                writer.writerow(row)
-                stream.flush()
     if not rows:
         raise RuntimeError("pyCycle sweep did not produce any converged engine-deck rows.")
     return rows

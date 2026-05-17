@@ -46,8 +46,17 @@ scale_turboshaft_to_generator_load = True
 sweep_electric_power = True
 unit_motor_rated_power_W = 1.0e6
 motor_peak_speed_rpm = 2500.0
-engine_power_settings = (0.35, 0.50, 0.70, 0.85, 1.00)
+motor_power_settings_W = (0.35e6, 0.50e6, 0.70e6, 0.85e6, 1.00e6)
 fan_diameter_cap_m = 2.0
+geometry_cases = (
+    {
+        "case_name": "baseline",
+    },
+    {
+        "case_name": "larger_mode1_nozzle",
+        "mode1_nozzle_throat_area_in2": 180.0,
+    },
+)
 
 
 def condition_key(altitude_ft, mach):
@@ -184,6 +193,7 @@ def main():
         engine_deck_csv=constraint_engine_deck_csv,
     )
     aircraft_sizing = engine_deck_aircraft_sizing(config=constraint_config)
+    architecture = propulsion_architecture(aircraft_sizing["aircraft"])
     drag_points_by_condition = precompute_drag_points(
         aircraft_sizing=aircraft_sizing,
         deck_conditions=deck_conditions,
@@ -225,7 +235,13 @@ def main():
     rows = write_pycycle_engine_deck(
         output_csv=output_csv,
         operating_points=operating_points,
-        power_settings=engine_power_settings if sweep_electric_power else (1.0,),
+        shaft_power_settings_W=tuple(
+            motor_power_W * architecture["motors_per_duality_engine"]
+            for motor_power_W in motor_power_settings_W
+        ) if sweep_electric_power else None,
+        max_fan_shaft_power_W=unit_motor_rated_power_W * architecture["motors_per_duality_engine"],
+        geometry_cases=geometry_cases,
+        power_settings=(1.0,),
         max_fan_speed_rpm=motor_peak_speed_rpm,
         drag_points_by_condition=drag_points_by_condition,
         sizing_required_thrust_N=aircraft_sizing["sizing_required_thrust_by_mode_N"].get(
@@ -235,7 +251,6 @@ def main():
     )
     print(f"Wrote {len(rows)} rubberized engine-deck rows to {output_csv.resolve()}")
     if size_electric_machines:
-        architecture = propulsion_architecture(aircraft_sizing["aircraft"])
         electric_summary = build_duality_powertrain_deck(
             output_csv,
             powertrain_output_csv,

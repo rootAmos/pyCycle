@@ -170,6 +170,10 @@ class DualityFanOnly(pyc.Cycle):
       driven counter-rotating stages.
     """
 
+    def initialize(self):
+        super().initialize()
+        self.options.declare('fixed_inlet_area', default=False)
+
     def setup(self):
         # 'design' is an OpenMDAO option set when instantiating the class
         # (True for DESIGN point, False for all OD points)
@@ -309,10 +313,13 @@ class DualityFanOnly(pyc.Cycle):
             self.connect('nozz.Throat:stat:area', 'balance.lhs:W')
 
             # ---- OFF-DESIGN BALANCE 2: inlet area — hold a scheduled diffuser exit MN ----
-            balance.add_balance('inlet_area', val=260., units='inch**2',
-                                lower=180., upper=400., eq_units=None)
-            self.connect('balance.inlet_area',   'inlet.area')
-            self.connect('inlet.Fl_O:stat:MN',   'balance.lhs:inlet_area')
+            if self.options['fixed_inlet_area']:
+                self.set_input_defaults('inlet.area', 260., units='inch**2')
+            else:
+                balance.add_balance('inlet_area', val=260., units='inch**2',
+                                    lower=180., upper=400., eq_units=None)
+                self.connect('balance.inlet_area',   'inlet.area')
+                self.connect('inlet.Fl_O:stat:MN',   'balance.lhs:inlet_area')
             # Fan speeds are scheduled independently in Mode 1, so off-design
             # solves only for mass flow against the mode-specific throat area.
 
@@ -365,6 +372,10 @@ class DualityFanAB(pyc.Cycle):
       Variable 3: N_fan2 → fan2.map.RlineMap == 2.0
       Variable 4: FAR   → ab.Fl_O:tot:T == rhs:FAR
     """
+
+    def initialize(self):
+        super().initialize()
+        self.options.declare('fixed_inlet_area', default=False)
 
     def setup(self):
         design = self.options['design']   # True = size nozzle, False = OD analysis
@@ -450,10 +461,13 @@ class DualityFanAB(pyc.Cycle):
             # rhs:W connected from DESIGN_mode2.nozz.Throat:stat:area in MPDuality
 
             # Balance 2: inlet area — keep diffuser exit Mach in a plausible range
-            balance.add_balance('inlet_area', val=260., units='inch**2',
-                                lower=180., upper=450., eq_units=None)
-            self.connect('balance.inlet_area', 'inlet.area')
-            self.connect('inlet.Fl_O:stat:MN', 'balance.lhs:inlet_area')
+            if self.options['fixed_inlet_area']:
+                self.set_input_defaults('inlet.area', 260., units='inch**2')
+            else:
+                balance.add_balance('inlet_area', val=260., units='inch**2',
+                                    lower=180., upper=450., eq_units=None)
+                self.connect('balance.inlet_area', 'inlet.area')
+                self.connect('inlet.Fl_O:stat:MN', 'balance.lhs:inlet_area')
 
             # Balance 3: N_fan1 — fan1 operating line
             # N_fan1 is set directly on the operating point.
@@ -648,7 +662,12 @@ class MPDuality(pyc.MPCycle):
        OD points — the physical throat constraint that locks mass flow.
     """
 
+    def initialize(self):
+        super().initialize()
+        self.options.declare('fixed_fan_inlet_area', default=False)
+
     def setup(self):
+        fixed_fan_inlet_area = self.options['fixed_fan_inlet_area']
 
         # ====================================================================
         # DESIGN POINT — Mode 2 fan + afterburner, Concorde-like cruise
@@ -687,7 +706,7 @@ class MPDuality(pyc.MPCycle):
         # ====================================================================
         # OD_mode1 — fan-only, A220-like cruise check
         # ====================================================================
-        self.pyc_add_pnt('OD_mode1', DualityFanOnly(design=False))
+        self.pyc_add_pnt('OD_mode1', DualityFanOnly(design=False, fixed_inlet_area=fixed_fan_inlet_area))
         self.set_input_defaults('OD_mode1.fc.MN',  CRUISE_CONDITIONS['mode1']['mach'])
         self.set_input_defaults('OD_mode1.fc.alt', CRUISE_CONDITIONS['mode1']['alt_ft'], units='ft')
         self.set_input_defaults('OD_mode1.ab.dPqP', 0.01)
@@ -695,7 +714,7 @@ class MPDuality(pyc.MPCycle):
         # ====================================================================
         # OD_mode2 — turbojet / afterburning mode, Concorde-like cruise check
         # ====================================================================
-        self.pyc_add_pnt('OD_mode2', DualityFanAB(design=False))
+        self.pyc_add_pnt('OD_mode2', DualityFanAB(design=False, fixed_inlet_area=fixed_fan_inlet_area))
         self.set_input_defaults('OD_mode2.fc.MN',  CRUISE_CONDITIONS['mode2']['mach'])
         self.set_input_defaults('OD_mode2.fc.alt', CRUISE_CONDITIONS['mode2']['alt_ft'], units='ft')
         self.set_input_defaults('OD_mode2.balance.rhs:FAR', 3200., units='degR')

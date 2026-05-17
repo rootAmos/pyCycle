@@ -140,6 +140,27 @@ def electric_machine_for_required_power(
     )
 
 
+def electric_machine_for_rated_power(
+    rated_power_W,
+    peak_speed_rpm,
+    peak_efficiency=0.96,
+    parasite_loss_ratio=0.35,
+    rated_power_ratio=1.5,
+    rated_torque_ratio=1.5,
+    speed_limit_ratio=1.5,
+):
+    """Return a fixed catalog-style machine map with the requested rated power."""
+    return electric_machine_for_required_power(
+        required_power_W=rated_power_W,
+        peak_speed_rpm=peak_speed_rpm,
+        peak_efficiency=peak_efficiency,
+        parasite_loss_ratio=parasite_loss_ratio,
+        rated_power_ratio=rated_power_ratio,
+        rated_torque_ratio=rated_torque_ratio,
+        speed_limit_ratio=speed_limit_ratio,
+    )
+
+
 def _row_float(row, name, default=0.0):
     value = row.get(name)
     if value in (None, ""):
@@ -493,6 +514,7 @@ def build_duality_powertrain_deck(
     inverter_efficiency=0.97,
     cable_efficiency=0.99,
     sizing_margin=1.0,
+    motor_rated_power_W=None,
 ):
     """Size electric machines from a Duality deck and write a powertrain deck.
 
@@ -530,13 +552,23 @@ def build_duality_powertrain_deck(
         )
         for row in rows
     )
-    motor_map = electric_machine_for_required_power(
-        required_power_W=max_motor_shaft_hp * hp_to_W,
-        peak_speed_rpm=motor_peak_speed_rpm,
-        peak_efficiency=motor_peak_efficiency,
-        parasite_loss_ratio=motor_parasite_loss_ratio,
-        sizing_margin=sizing_margin,
+    motor_map = (
+        electric_machine_for_rated_power(
+            rated_power_W=motor_rated_power_W,
+            peak_speed_rpm=motor_peak_speed_rpm,
+            peak_efficiency=motor_peak_efficiency,
+            parasite_loss_ratio=motor_parasite_loss_ratio,
+        )
+        if motor_rated_power_W is not None
+        else electric_machine_for_required_power(
+            required_power_W=max_motor_shaft_hp * hp_to_W,
+            peak_speed_rpm=motor_peak_speed_rpm,
+            peak_efficiency=motor_peak_efficiency,
+            parasite_loss_ratio=motor_parasite_loss_ratio,
+            sizing_margin=sizing_margin,
+        )
     )
+    motor_limits = electric_machine_limits(motor_map)
 
     generator_electric_requests_W = []
     for row in rows:
@@ -722,6 +754,10 @@ def build_duality_powertrain_deck(
             if key not in powertrain_output_columns
         }
         output_row.update({key: f"{float(value):.12g}" for key, value in updates.items()})
+        output_row["fan1_motor_power_margin_hp"] = f"{(motor_limits['rated_power_W'] - fan1_shaft_W) * W_to_hp:.12g}"
+        output_row["fan2_motor_power_margin_hp"] = f"{(motor_limits['rated_power_W'] - fan2_shaft_W) * W_to_hp:.12g}"
+        output_row["fan1_motor_power_limited"] = fan1_shaft_W > motor_limits["rated_power_W"]
+        output_row["fan2_motor_power_limited"] = fan2_shaft_W > motor_limits["rated_power_W"]
         for key, value in turbine_updates.items():
             output_row[key] = f"{float(value):.12g}" if isinstance(value, (int, float)) else value
         output_rows.append(output_row)
@@ -782,6 +818,8 @@ def build_duality_powertrain_deck(
         "motor_peak_torque_N_m": motor_summary["motor_peak_torque_N_m"],
         "motor_peak_efficiency": motor_summary["motor_peak_efficiency"],
         "motor_rated_torque_N_m": motor_summary["motor_rated_torque_N_m"],
+        "motor_catalog_rated_power_kw": float(motor_rated_power_W / 1000.0) if motor_rated_power_W is not None else "",
+        "motor_is_catalog_limited": motor_rated_power_W is not None,
         "generator_peak_speed_rpm": generator_summary["generator_peak_speed_rpm"],
         "generator_peak_torque_N_m": generator_summary["generator_peak_torque_N_m"],
         "generator_peak_efficiency": generator_summary["generator_peak_efficiency"],
@@ -861,18 +899,20 @@ def duality_electric_powertrain(
 
 def main():
     # Edit run options here.
-    save_plot = "electric_machine_efficiency_map.png"
+    save_plot = "outputs/plots/electric_machine_efficiency_map.png"
     show_plot = False
     rpm_min = 500.0
-    rpm_max = 14000.0
+    motor_rated_power_W = 1.0e6
+    motor_peak_speed_rpm = 2500.0
+    rpm_max = 3750.0
     torque_min_N_m = 1.0
-    torque_max_N_m = 500.0
+    torque_max_N_m = None
     n_rpm = 180
     n_torque = 160
 
-    motor_map = ElectricMachineMap(
-        peak_speed_rad_s=6000.0 * 2.0 * np.pi / 60.0,
-        peak_torque_N_m=250.0,
+    motor_map = electric_machine_for_rated_power(
+        rated_power_W=motor_rated_power_W,
+        peak_speed_rpm=motor_peak_speed_rpm,
         peak_efficiency=0.96,
         parasite_loss_ratio=0.35,
     )
@@ -883,10 +923,10 @@ def main():
         parasite_loss_ratio=0.30,
     )
     result = duality_electric_powertrain(
-        fan1_shaft_power_W=120000.0,
-        fan2_shaft_power_W=90000.0,
-        fan1_speed_rpm=6000.0,
-        fan2_speed_rpm=6000.0,
+        fan1_shaft_power_W=motor_rated_power_W,
+        fan2_shaft_power_W=motor_rated_power_W,
+        fan1_speed_rpm=motor_peak_speed_rpm,
+        fan2_speed_rpm=motor_peak_speed_rpm,
         motor_map=motor_map,
         generator_map=generator_map,
         generator_speed_rpm=12000.0,
@@ -894,6 +934,11 @@ def main():
     )
 
     print(" electric machine powertrain")
+    limits = electric_machine_limits(motor_map)
+    print(f"Motor rated shaft power: {limits['rated_power_W'] / 1000.0:.3f} kW")
+    print(f"Motor peak speed: {motor_peak_speed_rpm:.1f} rpm")
+    print(f"Motor peak torque: {motor_map.peak_torque_N_m:.3f} N*m")
+    print(f"Motor rated torque: {limits['rated_torque_N_m']:.3f} N*m")
     print(f"Per-engine motor terminal power: {result['per_engine_motor_terminal_W']:.3f} W")
     print(f"Per-engine generator electric power: {result['per_engine_generator_electric_W']:.3f} W")
     print(f"Per-engine generator shaft power: {result['per_engine_generator_shaft_W']:.3f} W")
@@ -903,6 +948,7 @@ def main():
 
     import matplotlib.pyplot as plt
 
+    torque_max_N_m = limits["rated_torque_N_m"] if torque_max_N_m is None else torque_max_N_m
     rpm = np.linspace(rpm_min, rpm_max, n_rpm)
     torque = np.linspace(torque_min_N_m, torque_max_N_m, n_torque)
     rpm_grid, torque_grid = np.meshgrid(rpm, torque)
@@ -961,6 +1007,8 @@ def main():
     ax.legend(loc="best")
 
     if save_plot is not None:
+        save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
         print(f"Efficiency map plot: {save_plot}")
     if show_plot:
