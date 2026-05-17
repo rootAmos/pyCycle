@@ -1,2 +1,0 @@
-propellant,duration_h,radius_m,length_m,m_dot_liq_out_kg_s,m_dot_gas_out_kg_s,tank_dry_mass_kg,initial_total_mass_kg,final_total_mass_kg,initial_fuel_mass_kg,final_fuel_mass_kg,final_fill_level,final_pressure_Pa,final_liquid_temperature_K,final_gas_temperature_K,min_pressure_Pa,max_pressure_Pa
-LNG,0.05,0.75,1.0,0.01,0.0,448.32259072104705,1866.699633186453,1864.8996331864528,1418.3770424654058,1416.577042465406,0.9488069137492812,167388.15887513364,33.0,124.16865135734557,150012.9431202188,167388.15887513364

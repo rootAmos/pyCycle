@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, asdict
 import csv
+import os
 from pathlib import Path
 
 import numpy as np
@@ -77,6 +78,7 @@ def run_tank_case(case):
     For a full mission, generate one case per segment or extend this helper to
     accept vectors directly.
     """
+    os.environ.setdefault("OPENMDAO_REPORTS", "0")
     import openmdao.api as om
 
     tank_cls, default_ullage_T, default_liquid_T = _tank_class(case.propellant)

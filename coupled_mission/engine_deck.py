@@ -32,7 +32,7 @@ class EngineDeck:
     then replace lookup with smooth interpolation or AeroSandbox surrogates.
     """
 
-    required_columns = {
+    si_required_columns = {
         "mode",
         "mach",
         "altitude_m",
@@ -40,36 +40,89 @@ class EngineDeck:
         "thrust_N",
         "fuel_flow_kg_s",
     }
+    imperial_required_columns = {
+        "mode",
+        "mach",
+        "altitude_ft",
+        "throttle",
+        "thrust_lbf",
+        "fuel_flow_lbm_s",
+    }
+
+    required_columns = si_required_columns
 
     def __init__(self, records):
         self.records = list(records)
         if not self.records:
             raise ValueError("EngineDeck needs at least one record.")
 
+    @staticmethod
+    def _row_float(row, *names, default=0.0):
+        for name in names:
+            value = row.get(name)
+            if value not in (None, ""):
+                return float(value)
+        return default
+
     @classmethod
     def from_csv(cls, csv_path):
         csv_path = Path(csv_path)
         with csv_path.open(newline="") as f:
             reader = csv.DictReader(f)
-            missing = cls.required_columns - set(reader.fieldnames or [])
+            fieldnames = set(reader.fieldnames or [])
+            has_si = cls.si_required_columns <= fieldnames
+            has_imperial = cls.imperial_required_columns <= fieldnames
+            if has_si:
+                units = "si"
+                missing = set()
+            elif has_imperial:
+                units = "imperial"
+                missing = set()
+            else:
+                missing = min(
+                    cls.si_required_columns - fieldnames,
+                    cls.imperial_required_columns - fieldnames,
+                    key=len,
+                )
             if missing:
                 raise ValueError(f"{csv_path} is missing required columns: {sorted(missing)}")
             records = []
             for row in reader:
+                if units == "imperial":
+                    altitude_m = float(row["altitude_ft"]) * 0.3048
+                    thrust_N = float(row["thrust_lbf"]) * 4.4482216152605
+                    fuel_flow_kg_s = float(row["fuel_flow_lbm_s"]) * 0.45359237
+                    electric_power_W = cls._row_float(row, "electric_power_hp") * 745.6998715822702
+                    fan1_shaft_power_W = cls._row_float(row, "fan1_shaft_power_hp") * 745.6998715822702
+                    fan2_shaft_power_W = cls._row_float(row, "fan2_shaft_power_hp") * 745.6998715822702
+                    generator_shaft_power_W = cls._row_float(row, "generator_shaft_power_hp") * 745.6998715822702
+                    inlet_area_m2 = cls._row_float(row, "inlet_area_in2") * 0.00064516
+                    nozzle_throat_area_m2 = cls._row_float(row, "nozzle_throat_area_in2") * 0.00064516
+                else:
+                    altitude_m = float(row["altitude_m"])
+                    thrust_N = float(row["thrust_N"])
+                    fuel_flow_kg_s = float(row["fuel_flow_kg_s"])
+                    electric_power_W = cls._row_float(row, "electric_power_W")
+                    fan1_shaft_power_W = cls._row_float(row, "fan1_shaft_power_W")
+                    fan2_shaft_power_W = cls._row_float(row, "fan2_shaft_power_W")
+                    generator_shaft_power_W = cls._row_float(row, "generator_shaft_power_W")
+                    inlet_area_m2 = cls._row_float(row, "inlet_area_m2")
+                    nozzle_throat_area_m2 = cls._row_float(row, "nozzle_throat_area_m2")
+
                 records.append(
                     EngineDeckRecord(
                         mode=row["mode"],
                         mach=float(row["mach"]),
-                        altitude_m=float(row["altitude_m"]),
+                        altitude_m=altitude_m,
                         throttle=float(row["throttle"]),
-                        thrust_N=float(row["thrust_N"]),
-                        fuel_flow_kg_s=float(row["fuel_flow_kg_s"]),
-                        electric_power_W=float(row.get("electric_power_W") or 0.0),
-                        fan1_shaft_power_W=float(row.get("fan1_shaft_power_W") or 0.0),
-                        fan2_shaft_power_W=float(row.get("fan2_shaft_power_W") or 0.0),
-                        generator_shaft_power_W=float(row.get("generator_shaft_power_W") or 0.0),
-                        inlet_area_m2=float(row.get("inlet_area_m2") or 0.0),
-                        nozzle_throat_area_m2=float(row.get("nozzle_throat_area_m2") or 0.0),
+                        thrust_N=thrust_N,
+                        fuel_flow_kg_s=fuel_flow_kg_s,
+                        electric_power_W=electric_power_W,
+                        fan1_shaft_power_W=fan1_shaft_power_W,
+                        fan2_shaft_power_W=fan2_shaft_power_W,
+                        generator_shaft_power_W=generator_shaft_power_W,
+                        inlet_area_m2=inlet_area_m2,
+                        nozzle_throat_area_m2=nozzle_throat_area_m2,
                     )
                 )
         return cls(records)

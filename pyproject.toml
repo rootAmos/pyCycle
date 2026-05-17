@@ -29,3 +29,7 @@ include = [
     "cla_theory_ratio/*.csv",
     "leading_edge_suction/*.csv",
 ]
+"data.propulsion" = [
+    "*.csv",
+    "turbine/*.csv",
+]

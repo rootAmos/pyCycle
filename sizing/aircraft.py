@@ -1,10 +1,15 @@
 """Hybrid aircraft object with AeroSandbox geometry and sizing adapters."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import json
+from pathlib import Path
 
 import aerosandbox as asb
 import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
+
+
+DEFAULT_AIRCRAFT_JSON = Path(__file__).with_name("aircraft.json")
 
 try:
     from .volume import AircraftVolumeInputs
@@ -18,20 +23,35 @@ except ImportError:
 class PropulsionSystem:
     """Propulsion assumptions used by weight and volume adapters."""
 
-    mass_kg: object = 450.0
+    mass_kg: object = 0.0
     volume_m3: object = 3.0
     number_engines: object = 2.0
+    number_propulsive_motors: object = 4.0
+    number_generators: object = 4.0
+    number_turbines: object = 2.0
+    generator_turbine_engine_face_mach: object = 0.35
+    generator_turbine_subsonic_pressure_recovery: object = 0.98
+    generator_turbine_min_pressure_recovery: object = 0.35
+    generator_turbine_supersonic_recovery_coefficient: object = 0.075
+    generator_turbine_supersonic_recovery_exponent: object = 1.35
     total_engine_thrust_lb: object = 12000.0
     engine_diameter_ft: object = 2.0
     engine_front_to_cockpit_length_m: object = 10.5
+    electric_propulsor_mach_limit: object = 1.2
+    propulsive_efficiency: object = 0.75
+    motor_controller_power_density_W_kg: object = 8000.0
+    generator_power_density_W_kg: object = 8000.0
+    turbine_power_density_W_kg: object = 6000.0
+    generator_efficiency: object = 0.96
+    turbine_mechanical_efficiency: object = 0.98
 
 
 @dataclass(frozen=True)
 class FuelSystem:
     """Fuel and tank assumptions in SI units."""
 
-    mass_kg: object
-    volume_m3: object
+    mass_kg: object = 0.0
+    volume_m3: object = 0.0
     fuel_density_kg_m3: object = 422.0
     tank_dry_mass_kg: object = 0.0
 
@@ -45,6 +65,26 @@ class Payload:
 
 
 @dataclass(frozen=True)
+class Systems:
+    uninstalled_avionics_weight_lb: object = 800.0
+    electrical_rating_kva: object = 40.0
+    electrical_routing_distance_ft: object = 1.0
+    number_mechanical_functions: object = 1.0
+    number_hydraulic_utility_functions: object = 5.0
+    number_control_functions: object = 4.0
+
+
+@dataclass(frozen=True)
+class Interiors:
+    number_crew: object = 1.0
+    number_passengers: object = 5.0
+    crew_weight_lb: object = 200.0
+    passenger_weight_lb: object = 200.0
+    cargo_weight_lb: object = 0.0
+    furnishings_weight_lb: object = 217.6
+
+
+@dataclass(frozen=True)
 class Aircraft:
     """Top-level sizing object with native AeroSandbox geometry."""
 
@@ -54,6 +94,8 @@ class Aircraft:
     fuel: FuelSystem
     payload: Payload
     landing_mass_kg: object
+    systems: Systems = field(default_factory=Systems)
+    interiors: Interiors = field(default_factory=Interiors)
 
     @property
     def geometry(self):
@@ -64,6 +106,8 @@ class Aircraft:
         g = self.geometry
         p = self.propulsion
         f = self.fuel
+        s = self.systems
+        i = self.interiors
 
         return WeightInputs(
             design_gross_weight_lb=self.mass_kg / u.lbm,
@@ -100,8 +144,19 @@ class Aircraft:
             engine_front_to_cockpit_length_ft=p.engine_front_to_cockpit_length_m
             / u.foot,
             total_fuel_volume_gal=f.volume_m3 / u.gallon,
-            number_mechanical_functions=1.0,
-            number_generators=p.number_engines,
+            number_mechanical_functions=s.number_mechanical_functions,
+            number_hydraulic_utility_functions=s.number_hydraulic_utility_functions,
+            number_control_functions=s.number_control_functions,
+            electrical_rating_kva=s.electrical_rating_kva,
+            electrical_routing_distance_ft=s.electrical_routing_distance_ft,
+            number_generators=p.number_generators,
+            uninstalled_avionics_weight_lb=s.uninstalled_avionics_weight_lb,
+            number_crew=i.number_crew,
+            number_passengers=i.number_passengers,
+            crew_weight_lb=i.crew_weight_lb,
+            passenger_weight_lb=i.passenger_weight_lb,
+            cargo_weight_lb=i.cargo_weight_lb,
+            furnishings_weight_lb=i.furnishings_weight_lb,
             fuel_weight_lb=f.mass_kg / u.lbm,
             tank_dry_weight_lb=f.tank_dry_mass_kg / u.lbm,
             custom_propulsion_weight_lb=p.mass_kg / u.lbm,
@@ -116,6 +171,123 @@ class Aircraft:
             payload_volume_m3=self.payload.volume_m3,
             fuel_1_density_kg_m3=self.fuel.fuel_density_kg_m3,
         )
+
+    @classmethod
+    def from_json(
+        cls,
+        path=DEFAULT_AIRCRAFT_JSON,
+        *,
+        mass_kg=0.0,
+        fuel_mass_kg=0.0,
+        tank_dry_mass_kg=0.0,
+        propulsion_mass_kg=0.0,
+    ):
+        data = load_aircraft_definition(path)
+        geometry = data["geometry"]
+        fuel = dict(data["fuel"])
+        payload = data["payload"]
+        propulsion = dict(data["propulsion"])
+        systems = data.get("systems", {})
+        interiors = data.get("interiors", {})
+        aircraft = data.get("aircraft", {})
+        landing_mass_fraction = aircraft.get("landing_mass_fraction", 0.85)
+        fuel_density_kg_m3 = fuel["fuel_density_kg_m3"]
+        propulsion["mass_kg"] = propulsion_mass_kg
+        airplane = build_geometric_asb_airplane(**geometry)
+        return cls(
+            airplane=airplane,
+            mass_kg=mass_kg,
+            landing_mass_kg=mass_kg * landing_mass_fraction,
+            propulsion=PropulsionSystem(**propulsion),
+            fuel=FuelSystem(
+                mass_kg=fuel_mass_kg,
+                volume_m3=fuel_mass_kg / fuel_density_kg_m3,
+                fuel_density_kg_m3=fuel_density_kg_m3,
+                tank_dry_mass_kg=tank_dry_mass_kg,
+            ),
+            payload=Payload(**payload),
+            systems=Systems(**systems),
+            interiors=Interiors(**interiors),
+        )
+
+
+def _flatten_nested_geometry(geometry):
+    """Convert aircraft.json geometry subsections into build_airplane kwargs."""
+    if any(key in geometry for key in ("wing", "fuselage", "vtail", "landing_gear", "controls")):
+        wing = geometry.get("wing", {})
+        fuselage = geometry.get("fuselage", {})
+        vtail = geometry.get("vtail", {})
+        landing_gear = geometry.get("landing_gear", {})
+        controls = geometry.get("controls", {})
+        geometry = {
+            "name": geometry.get("name", "Sizing Aircraft"),
+            "planform_area_m2": wing.get("planform_area_m2", 80.0),
+            "aspect_ratio": wing.get("aspect_ratio", 3.0),
+            "taper_ratio": wing.get("taper_ratio", 0.25),
+            "sweep_25_deg": wing.get("sweep_25_deg", 60.0),
+            "root_thickness_to_chord": wing.get("root_thickness_to_chord", 0.06),
+            "main_wing_tip_le_x_m": wing.get("tip_le_x_m", 2.066),
+            "fuselage_length_m": fuselage.get("length_m", 30.0),
+            "fuselage_height_m": fuselage.get("height_m", 3.6),
+            "fuselage_width_m": fuselage.get("width_m", 3.0),
+            "vtail_area_m2": vtail.get("area_m2", 20.8),
+            "vtail_span_m": vtail.get("span_m", 5.12),
+            "vtail_dihedral_angle_deg": vtail.get("dihedral_angle_deg", 37.0),
+            "vtail_le_x_m": vtail.get("le_x_m", 16.5),
+            "tail_length_m": vtail.get("tail_length_m", 16.5),
+            "main_gear_length_in": landing_gear.get("main_gear_length_in", 42.0),
+            "nose_gear_length_in": landing_gear.get("nose_gear_length_in", 30.0),
+            "rudder_area_m2": controls.get("rudder_area_m2", 2.0),
+            "wing_mounted_control_area_m2": controls.get("wing_mounted_control_area_m2", 6.4),
+        }
+    return dict(geometry)
+
+
+def load_aircraft_definition(path=DEFAULT_AIRCRAFT_JSON):
+    with Path(path).open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
+    geometry = _flatten_nested_geometry(dict(data.get("geometry", {})))
+    if "sweep_25_deg" in geometry and "sweep_25_rad" not in geometry:
+        geometry["sweep_25_rad"] = np.radians(geometry.pop("sweep_25_deg"))
+    data["geometry"] = geometry
+    return data
+
+
+def propulsion_from_definition(path=DEFAULT_AIRCRAFT_JSON, **overrides):
+    data = dict(load_aircraft_definition(path)["propulsion"])
+    data.update({key: value for key, value in overrides.items() if value is not None})
+    return PropulsionSystem(**data)
+
+
+def fuel_from_definition(path=DEFAULT_AIRCRAFT_JSON, **overrides):
+    data = dict(load_aircraft_definition(path)["fuel"])
+    data.update({key: value for key, value in overrides.items() if value is not None})
+    mass_kg = data.get("mass_kg", 0.0)
+    tank_dry_mass_kg = data.get("tank_dry_mass_kg", 0.0)
+    return FuelSystem(
+        mass_kg=mass_kg,
+        volume_m3=mass_kg / data["fuel_density_kg_m3"],
+        fuel_density_kg_m3=data["fuel_density_kg_m3"],
+        tank_dry_mass_kg=tank_dry_mass_kg,
+    )
+
+
+def payload_from_definition(path=DEFAULT_AIRCRAFT_JSON, **overrides):
+    data = dict(load_aircraft_definition(path)["payload"])
+    data.update({key: value for key, value in overrides.items() if value is not None})
+    return Payload(**data)
+
+
+def systems_from_definition(path=DEFAULT_AIRCRAFT_JSON, **overrides):
+    data = dict(load_aircraft_definition(path).get("systems", {}))
+    data.update({key: value for key, value in overrides.items() if value is not None})
+    return Systems(**data)
+
+
+def interiors_from_definition(path=DEFAULT_AIRCRAFT_JSON, **overrides):
+    data = dict(load_aircraft_definition(path).get("interiors", {}))
+    data.update({key: value for key, value in overrides.items() if value is not None})
+    return Interiors(**data)
 
 
 def airplane_geometry(airplane):
@@ -268,41 +440,7 @@ def build_geometric_asb_airplane(
 
 
 def main():
-    airplane = build_geometric_asb_airplane(
-        planform_area_m2=80.0,
-        fuselage_length_m=30.0,
-        fuselage_height_m=3.6,
-        fuselage_width_m=3.0,
-        vtail_area_m2=20.8,
-        vtail_span_m=5.12,
-        vtail_dihedral_angle_deg=37.0,
-        tail_length_m=16.5,
-        rudder_area_m2=2.0,
-        wing_mounted_control_area_m2=6.4,
-    )
-    fuel_density_kg_m3 = 422.0
-    fuel_mass_kg = 1200.0
-    aircraft = Aircraft(
-        airplane=airplane,
-        mass_kg=4000.0,
-        landing_mass_kg=3400.0,
-        propulsion=PropulsionSystem(
-            mass_kg=450.0,
-            volume_m3=3.0,
-            number_engines=2.0,
-            engine_front_to_cockpit_length_m=10.5,
-        ),
-        fuel=FuelSystem(
-            mass_kg=fuel_mass_kg,
-            volume_m3=fuel_mass_kg / fuel_density_kg_m3,
-            fuel_density_kg_m3=fuel_density_kg_m3,
-            tank_dry_mass_kg=350.0,
-        ),
-        payload=Payload(
-            mass_kg=0.0,
-            volume_m3=5.0,
-        ),
-    )
+    aircraft = Aircraft.from_json()
     geometry = aircraft.geometry
     weight_inputs = aircraft.to_weight_inputs()
     volume_inputs = aircraft.to_volume_inputs()

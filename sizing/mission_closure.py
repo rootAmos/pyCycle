@@ -17,10 +17,16 @@ import aerosandbox.tools.units as u
 try:
     from .aircraft import (
         Aircraft,
+        DEFAULT_AIRCRAFT_JSON,
         FuelSystem,
         Payload,
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
+        fuel_from_definition,
+        payload_from_definition,
+        propulsion_from_definition,
+        systems_from_definition,
+        interiors_from_definition,
     )
     from .constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
@@ -28,10 +34,16 @@ try:
 except ImportError:
     from aircraft import (
         Aircraft,
+        DEFAULT_AIRCRAFT_JSON,
         FuelSystem,
         Payload,
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
+        fuel_from_definition,
+        payload_from_definition,
+        propulsion_from_definition,
+        systems_from_definition,
+        interiors_from_definition,
     )
     from constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
@@ -51,19 +63,13 @@ class MissionWaypoint:
 
 @dataclass(frozen=True)
 class MissionClosureConfig:
-    engine_deck_csv: object = "coupled_mission/data/example_engine_deck.csv"
+    aircraft_json: object = DEFAULT_AIRCRAFT_JSON
+    engine_deck_csv: object = "data/propulsion/example_engine_deck.csv"
     propellant: str = "LNG"
-    fuel_density_kg_m3: object = 422.0
-    initial_fuel_mass_kg: object = 1200.0
-    initial_tank_dry_mass_kg: object = 350.0
-    propulsion_mass_kg: object = 450.0
-    propulsion_volume_m3: object = 3.0
-    payload_volume_m3: object = 5.0
     kuechemann_tau: object = 0.0446
     reserve_fraction: object = 0.06
     tank_fill_fraction: object = 0.95
     tank_cyl_length_to_radius: object = 4.0
-    number_engines: object = 2.0
     thrust_scale: object = 1.0
     max_iterations: int = 8
     convergence_tol: object = 1e-3
@@ -86,18 +92,46 @@ def default_5_point_mission():
     )
 
 
+def config_propulsion(config, **overrides):
+    return propulsion_from_definition(config.aircraft_json, **overrides)
+
+
+def config_fuel(config, **overrides):
+    return fuel_from_definition(config.aircraft_json, **overrides)
+
+
+def config_payload(config, **overrides):
+    return payload_from_definition(config.aircraft_json, **overrides)
+
+
+def config_systems(config, **overrides):
+    return systems_from_definition(config.aircraft_json, **overrides)
+
+
+def config_interiors(config, **overrides):
+    return interiors_from_definition(config.aircraft_json, **overrides)
+
+
 def read_pycycle_engine_deck(engine_deck_csv):
     rows = []
     with Path(engine_deck_csv).open(newline="") as f:
         for row in csv.DictReader(f):
+            if "altitude_ft" in row:
+                altitude_m = float(row["altitude_ft"]) * 0.3048
+                thrust_N = float(row["thrust_lbf"]) * 4.4482216152605
+                fuel_flow_kg_s = float(row["fuel_flow_lbm_s"]) * 0.45359237
+            else:
+                altitude_m = float(row["altitude_m"])
+                thrust_N = float(row["thrust_N"])
+                fuel_flow_kg_s = float(row["fuel_flow_kg_s"])
             rows.append(
                 {
                     "mode": row["mode"],
                     "mach": float(row["mach"]),
-                    "altitude_m": float(row["altitude_m"]),
+                    "altitude_m": altitude_m,
                     "throttle": float(row["throttle"]),
-                    "thrust_N": float(row["thrust_N"]),
-                    "fuel_flow_kg_s": float(row["fuel_flow_kg_s"]),
+                    "thrust_N": thrust_N,
+                    "fuel_flow_kg_s": fuel_flow_kg_s,
                 }
             )
     if not rows:
@@ -189,6 +223,14 @@ def weight_inputs_from_sizing(
 
 
 def solve_weight_volume_for_fuel_and_tank(fuel_mass_kg, tank_dry_mass_kg, tank_volume_m3, config):
+    fuel_definition = config_fuel(
+        config,
+        mass_kg=fuel_mass_kg,
+        tank_dry_mass_kg=tank_dry_mass_kg,
+    )
+    payload = config_payload(config)
+    systems = config_systems(config)
+    interiors = config_interiors(config)
     opti = asb.Opti()
     planform_area_m2 = opti.variable(init_guess=80.0, lower_bound=1.0, scale=100.0)
     takeoff_mass_kg = opti.variable(init_guess=4000.0, lower_bound=100.0, scale=5000.0)
@@ -215,19 +257,14 @@ def solve_weight_volume_for_fuel_and_tank(fuel_mass_kg, tank_dry_mass_kg, tank_v
         airplane=airplane,
         mass_kg=takeoff_mass_kg,
         landing_mass_kg=0.85 * takeoff_mass_kg,
-        propulsion=PropulsionSystem(
-            mass_kg=config.propulsion_mass_kg,
-            volume_m3=config.propulsion_volume_m3,
-            number_engines=config.number_engines,
+        propulsion=config_propulsion(
+            config,
             engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
         ),
-        fuel=FuelSystem(
-            mass_kg=fuel_mass_kg,
-            volume_m3=fuel_mass_kg / config.fuel_density_kg_m3,
-            fuel_density_kg_m3=config.fuel_density_kg_m3,
-            tank_dry_mass_kg=tank_dry_mass_kg,
-        ),
-        payload=Payload(volume_m3=config.payload_volume_m3),
+        fuel=fuel_definition,
+        payload=payload,
+        systems=systems,
+        interiors=interiors,
     )
     volume = aircraft_volume_breakdown(aircraft.to_volume_inputs())
     opti.subject_to(volume["kuechemann_slenderness_parameter"] == config.kuechemann_tau)
@@ -253,17 +290,18 @@ def solve_weight_volume_for_fuel_and_tank(fuel_mass_kg, tank_dry_mass_kg, tank_v
 
 
 def size_tank_for_fuel(fuel_mass_kg, config):
-    usable_volume_m3 = fuel_mass_kg / (config.fuel_density_kg_m3 * config.tank_fill_fraction)
+    fuel = config_fuel(config)
+    usable_volume_m3 = fuel_mass_kg / (fuel.fuel_density_kg_m3 * config.tank_fill_fraction)
     radius_m = (
         usable_volume_m3
         / (4.0 / 3.0 * np.pi + np.pi * config.tank_cyl_length_to_radius)
     ) ** (1.0 / 3.0)
     length_m = config.tank_cyl_length_to_radius * radius_m
 
-    reference_volume_m3 = config.initial_fuel_mass_kg / (
-        config.fuel_density_kg_m3 * config.tank_fill_fraction
+    reference_volume_m3 = fuel.mass_kg / (
+        fuel.fuel_density_kg_m3 * config.tank_fill_fraction
     )
-    tank_dry_mass_kg = config.initial_tank_dry_mass_kg * (
+    tank_dry_mass_kg = fuel.tank_dry_mass_kg * (
         usable_volume_m3 / max(reference_volume_m3, 1e-9)
     ) ** (2.0 / 3.0)
 
@@ -366,7 +404,7 @@ def run_5_point_mission_fuel(
 def close_mission_sizing(config=MissionClosureConfig(), waypoints=None):
     waypoints = waypoints or default_5_point_mission()
     engine_deck_rows = read_pycycle_engine_deck(config.engine_deck_csv)
-    fuel_mass_kg = config.initial_fuel_mass_kg
+    fuel_mass_kg = config_fuel(config).mass_kg
     tank = size_tank_for_fuel(fuel_mass_kg, config)
     history = []
 
@@ -411,7 +449,7 @@ def close_mission_sizing(config=MissionClosureConfig(), waypoints=None):
 def main():
     # Edit run options here.
     config = MissionClosureConfig(
-        engine_deck_csv="coupled_mission/data/example_engine_deck.csv",
+        engine_deck_csv="data/propulsion/example_engine_deck.csv",
         initial_fuel_mass_kg=1200.0,
         initial_tank_dry_mass_kg=350.0,
         propulsion_mass_kg=450.0,

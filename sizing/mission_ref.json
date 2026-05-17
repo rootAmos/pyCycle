@@ -32,7 +32,7 @@
       "name": "subsonic_climb",
       "segment_type": "climb",
       "start_altitude_ft": 1500,
-      "end_altitude_ft": 25000,
+      "end_altitude_ft": 35000,
       "start_mach": 0.35,
       "end_mach": 0.93,
       "distance_nmi": 120,
@@ -42,7 +42,7 @@
     {
       "name": "transonic_acceleration_climb",
       "segment_type": "accelerating_climb",
-      "start_altitude_ft": 25000,
+      "start_altitude_ft": 35000,
       "end_altitude_ft": 43000,
       "start_mach": 0.93,
       "end_mach": 1.70,

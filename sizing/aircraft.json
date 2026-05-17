@@ -1,0 +1,80 @@
+{
+  "aircraft": {
+    "landing_mass_fraction": 0.85
+  },
+  "geometry": {
+    "name": "Sizing Aircraft",
+    "wing": {
+      "planform_area_m2": 80.0,
+      "aspect_ratio": 3.0,
+      "taper_ratio": 0.25,
+      "sweep_25_deg": 60.0,
+      "root_thickness_to_chord": 0.06,
+      "tip_le_x_m": 2.066
+    },
+    "fuselage": {
+      "length_m": 30.0,
+      "height_m": 3.6,
+      "width_m": 3.0
+    },
+    "vtail": {
+      "area_m2": 20.8,
+      "span_m": 5.12,
+      "dihedral_angle_deg": 37.0,
+      "le_x_m": 16.5,
+      "tail_length_m": 16.5
+    },
+    "landing_gear": {
+      "main_gear_length_in": 42.0,
+      "nose_gear_length_in": 30.0
+    },
+    "controls": {
+      "rudder_area_m2": 2.0,
+      "wing_mounted_control_area_m2": 6.4
+    }
+  },
+  "propulsion": {
+    "volume_m3": 3.0,
+    "number_engines": 2.0,
+    "number_propulsive_motors": 4.0,
+    "number_generators": 4.0,
+    "number_turbines": 2.0,
+    "generator_turbine_engine_face_mach": 0.35,
+    "generator_turbine_subsonic_pressure_recovery": 0.98,
+    "generator_turbine_min_pressure_recovery": 0.35,
+    "generator_turbine_supersonic_recovery_coefficient": 0.075,
+    "generator_turbine_supersonic_recovery_exponent": 1.35,
+    "total_engine_thrust_lb": 12000.0,
+    "engine_diameter_ft": 2.0,
+    "engine_front_to_cockpit_length_m": 10.5,
+    "electric_propulsor_mach_limit": 1.2,
+    "propulsive_efficiency": 0.75,
+    "motor_controller_power_density_W_kg": 8000.0,
+    "generator_power_density_W_kg": 8000.0,
+    "turbine_power_density_W_kg": 6000.0,
+    "generator_efficiency": 0.96,
+    "turbine_mechanical_efficiency": 0.98
+  },
+  "fuel": {
+    "fuel_density_kg_m3": 422.0
+  },
+  "payload": {
+    "volume_m3": 5.0
+  },
+  "systems": {
+    "uninstalled_avionics_weight_lb": 800.0,
+    "electrical_rating_kva": 40.0,
+    "electrical_routing_distance_ft": 1.0,
+    "number_mechanical_functions": 1.0,
+    "number_hydraulic_utility_functions": 5.0,
+    "number_control_functions": 4.0
+  },
+  "interiors": {
+    "number_crew": 1.0,
+    "number_passengers": 5.0,
+    "crew_weight_lb": 200.0,
+    "passenger_weight_lb": 200.0,
+    "cargo_weight_lb": 0.0,
+    "furnishings_weight_lb": 217.6
+  }
+}

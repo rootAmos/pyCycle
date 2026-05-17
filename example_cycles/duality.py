@@ -64,7 +64,10 @@ operating line, temperature targets).
 """
 
 import sys
+import math
+import os
 
+os.environ.setdefault("OPENMDAO_REPORTS", "0")
 import openmdao.api as om   # OpenMDAO: the multidisciplinary optimisation framework
 import pycycle.api as pyc   # pyCycle: thermodynamic cycle components built on OpenMDAO
 
@@ -453,16 +456,11 @@ class DualityFanAB(pyc.Cycle):
             self.connect('inlet.Fl_O:stat:MN', 'balance.lhs:inlet_area')
 
             # Balance 3: N_fan1 — fan1 operating line
-            balance.add_balance('N_fan1', val=6000., units='rpm',
-                                lower=500., upper=20000., eq_units=None, rhs_val=2.0)
-            self.connect('balance.N_fan1',    'N_fan1')
-            self.connect('fan1.map.RlineMap', 'balance.lhs:N_fan1')
+            # N_fan1 is set directly on the operating point.
+            # Fan speeds are prescribed by the motor speed schedule.
 
             # Balance 4: N_fan2 — fan2 operating line (independent counter-rotating)
-            balance.add_balance('N_fan2', val=6000., units='rpm',
-                                lower=500., upper=20000., eq_units=None, rhs_val=2.0)
-            self.connect('balance.N_fan2',    'N_fan2')
-            self.connect('fan2.map.RlineMap', 'balance.lhs:N_fan2')
+            # N_fan2 is set directly on the operating point.
 
             # Balance 5: FAR — afterburner exit temperature target
             balance.add_balance('FAR', eq_units='degR', lower=1e-4, val=0.017)
@@ -1349,7 +1347,28 @@ def _run_design_mode2():
     return result
 
 
-def _run_design_mode3():
+def _initial_total_conditions(alt_ft, mach):
+    """Return rough freestream total pressure [psia] and temperature [degR]."""
+    gamma = 1.4
+    alt_m = alt_ft * 0.3048
+    t0 = 288.15
+    p0 = 101325.0
+    lapse = -0.0065
+    r_air = 287.05287
+    g = 9.80665
+    if alt_m <= 11000.0:
+        ts = t0 + lapse * alt_m
+        ps = p0 * (ts / t0) ** (-g / (lapse * r_air))
+    else:
+        ts = 216.65
+        p11 = p0 * (ts / t0) ** (-g / (lapse * r_air))
+        ps = p11 * math.exp(-g * (alt_m - 11000.0) / (r_air * ts))
+    tt = ts * (1.0 + 0.5 * (gamma - 1.0) * mach**2)
+    pt = ps * (tt / ts) ** (gamma / (gamma - 1.0))
+    return pt / 6894.757293168, tt * 1.8
+
+
+def _run_design_mode3(alt_ft=None, mach=None, thrust_lbf=None, t4_degR=3800.0):
     """
     Standalone DualityRamjet(design=True) sizing run at M=2.5, 40 000 ft.
     Returns a dict with nozzle throat area, inlet area, bypass_duct area,
@@ -1370,23 +1389,28 @@ def _run_design_mode3():
     p.set_val('bypass_duct.dPqP', 0.01)
     p.set_val('combustor.dPqP',   0.03)
 
-    p.set_val('fc.alt', CRUISE_CONDITIONS['mode3']['alt_ft'], units='ft')
-    p.set_val('fc.MN',  CRUISE_CONDITIONS['mode3']['mach'])
+    alt_ft = CRUISE_CONDITIONS['mode3']['alt_ft'] if alt_ft is None else alt_ft
+    mach = CRUISE_CONDITIONS['mode3']['mach'] if mach is None else mach
+    thrust_lbf = PC24_SCALED_THRUST['mode3_ramjet'] if thrust_lbf is None else thrust_lbf
+    pt_psia, tt_degR = _initial_total_conditions(alt_ft, mach)
 
-    p.set_val('balance.rhs:W',   PC24_SCALED_THRUST['mode3_ramjet'], units='lbf')
-    p.set_val('balance.rhs:FAR', 3800., units='degR')
+    p.set_val('fc.alt', alt_ft, units='ft')
+    p.set_val('fc.MN',  mach)
+
+    p.set_val('balance.rhs:W',   thrust_lbf, units='lbf')
+    p.set_val('balance.rhs:FAR', t4_degR, units='degR')
 
     # Initial guesses consistent with the chosen cruise condition.
     p['balance.W']   = 80.
     p['balance.FAR'] = 0.04
-    p['fc.balance.Pt'] = CRUISE_CONDITIONS['mode3']['Pt_psia']
-    p['fc.balance.Tt'] = CRUISE_CONDITIONS['mode3']['Tt_degR']
-    p.set_val('inlet.Fl_O:tot:T',       CRUISE_CONDITIONS['mode3']['Tt_degR'], units='degR')
-    p.set_val('inlet.Fl_O:tot:P',       19.60, units='lbf/inch**2')
-    p.set_val('bypass_duct.Fl_O:tot:T', CRUISE_CONDITIONS['mode3']['Tt_degR'], units='degR')
-    p.set_val('bypass_duct.Fl_O:tot:P', 19.40, units='lbf/inch**2')
-    p.set_val('combustor.Fl_O:tot:T',   3800.,  units='degR')
-    p.set_val('combustor.Fl_O:tot:P',   18.82, units='lbf/inch**2')
+    p['fc.balance.Pt'] = pt_psia
+    p['fc.balance.Tt'] = tt_degR
+    p.set_val('inlet.Fl_O:tot:T',       tt_degR, units='degR')
+    p.set_val('inlet.Fl_O:tot:P',       pt_psia, units='lbf/inch**2')
+    p.set_val('bypass_duct.Fl_O:tot:T', tt_degR, units='degR')
+    p.set_val('bypass_duct.Fl_O:tot:P', 0.99 * pt_psia, units='lbf/inch**2')
+    p.set_val('combustor.Fl_O:tot:T',   t4_degR,  units='degR')
+    p.set_val('combustor.Fl_O:tot:P',   0.96 * pt_psia, units='lbf/inch**2')
 
     p.run_model()
     result = {
@@ -1470,8 +1494,6 @@ if __name__ == '__main__':
     prob.set_val('OD_mode3.balance.rhs:W', nozz_area_mode3,  units='inch**2')
     prob.set_val('OD_mode1.balance.rhs:inlet_area', 0.55)
     prob.set_val('OD_mode2.balance.rhs:inlet_area', 0.60)
-    prob.set_val('OD_mode2.balance.rhs:N_fan1', FAN_RLINE_TARGET)
-    prob.set_val('OD_mode2.balance.rhs:N_fan2', FAN_RLINE_TARGET)
 
     # Inject Mode 3 cross-section areas from the standalone Blackbird-like
     # ramjet sizing run.
@@ -1503,8 +1525,8 @@ if __name__ == '__main__':
     prob['OD_mode2.balance.W']      = 35.
     prob['OD_mode2.balance.inlet_area'] = 260.
     prob['OD_mode2.balance.FAR']    = 0.035
-    prob['OD_mode2.balance.N_fan1'] = 6000.
-    prob['OD_mode2.balance.N_fan2'] = 6000.
+    prob.set_val('OD_mode2.N_fan1', 6000., units='rpm')
+    prob.set_val('OD_mode2.N_fan2', 6000., units='rpm')
     prob['OD_mode2.fc.balance.Pt']  = CRUISE_CONDITIONS['mode2']['Pt_psia']
     prob['OD_mode2.fc.balance.Tt']  = CRUISE_CONDITIONS['mode2']['Tt_degR']
     prob.set_val('OD_mode2.inlet.Fl_O:tot:T',  CRUISE_CONDITIONS['mode2']['Tt_degR'], units='degR')

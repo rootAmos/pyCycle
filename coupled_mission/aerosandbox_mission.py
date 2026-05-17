@@ -13,13 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 import csv
 import importlib.util
+import math
 
 try:
     from .tank_deck import TankCase, write_tank_deck
-    from sizing.electric_machines import (
-        ElectricMachineMap,
-        duality_electric_powertrain,
-    )
 except ImportError:  # Allows `python coupled_mission/aerosandbox_mission.py`.
     import sys
 
@@ -27,10 +24,6 @@ except ImportError:  # Allows `python coupled_mission/aerosandbox_mission.py`.
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     from coupled_mission.tank_deck import TankCase, write_tank_deck
-    from sizing.electric_machines import (
-        ElectricMachineMap,
-        duality_electric_powertrain,
-    )
 
 
 @dataclass
@@ -90,21 +83,34 @@ def _read_engine_reference_by_mode(engine_deck_csv):
 
     by_mode = {}
     for row in rows:
+        altitude_m, thrust_N, fuel_flow_kg_s, electric_power_W = _engine_csv_row_to_si(row)
         mode = row["mode"]
         throttle = max(float(row["throttle"]), 1e-6)
-        thrust = float(row["thrust_N"])
-        fuel_flow = float(row["fuel_flow_kg_s"])
-        electric_power = float(row.get("electric_power_W") or 0.0)
         normalized = {
             "mach_ref": float(row["mach"]),
-            "altitude_ref_m": float(row["altitude_m"]),
-            "thrust_per_throttle_N": thrust / throttle,
-            "fuel_flow_per_throttle_kg_s": fuel_flow / throttle,
-            "electric_power_per_throttle_W": electric_power / throttle,
+            "altitude_ref_m": altitude_m,
+            "thrust_per_throttle_N": thrust_N / throttle,
+            "fuel_flow_per_throttle_kg_s": fuel_flow_kg_s / throttle,
+            "electric_power_per_throttle_W": electric_power_W / throttle,
         }
-        if mode not in by_mode or thrust > by_mode[mode]["thrust_per_throttle_N"]:
+        if mode not in by_mode or thrust_N > by_mode[mode]["thrust_per_throttle_N"]:
             by_mode[mode] = normalized
     return by_mode
+
+
+def _engine_csv_row_to_si(row):
+    """Read either SI or imperial engine-deck CSV rows into SI values."""
+    if "altitude_ft" in row:
+        altitude_m = float(row["altitude_ft"]) * 0.3048
+        thrust_N = float(row["thrust_lbf"]) * 4.4482216152605
+        fuel_flow_kg_s = float(row["fuel_flow_lbm_s"]) * 0.45359237
+        electric_power_W = float(row.get("electric_power_hp") or 0.0) * 745.6998715822702
+    else:
+        altitude_m = float(row["altitude_m"])
+        thrust_N = float(row["thrust_N"])
+        fuel_flow_kg_s = float(row["fuel_flow_kg_s"])
+        electric_power_W = float(row.get("electric_power_W") or 0.0)
+    return altitude_m, thrust_N, fuel_flow_kg_s, electric_power_W
 
 
 def _read_engine_references_for_profile(engine_deck_csv, config):
@@ -129,23 +135,22 @@ def _read_engine_references_for_profile(engine_deck_csv, config):
             raise ValueError(f'Mode "{mode}" not present in engine deck.')
 
         def score(row):
+            row_altitude_m, _, _, _ = _engine_csv_row_to_si(row)
             return (
                 (float(row["mach"]) - waypoint_mach) ** 2
-                + ((float(row["altitude_m"]) - altitude_m) / 10000.0) ** 2
+                + ((row_altitude_m - altitude_m) / 10000.0) ** 2
             )
 
         row = min(candidates, key=score)
+        row_altitude_m, thrust_N, fuel_flow_kg_s, electric_power_W = _engine_csv_row_to_si(row)
         throttle = max(float(row["throttle"]), 1e-6)
-        thrust = float(row["thrust_N"])
-        fuel_flow = float(row["fuel_flow_kg_s"])
-        electric_power = float(row.get("electric_power_W") or 0.0)
         references.append(
             {
                 "mach_ref": float(row["mach"]),
-                "altitude_ref_m": float(row["altitude_m"]),
-                "thrust_per_throttle_N": thrust / throttle,
-                "fuel_flow_per_throttle_kg_s": fuel_flow / throttle,
-                "electric_power_per_throttle_W": electric_power / throttle,
+                "altitude_ref_m": row_altitude_m,
+                "thrust_per_throttle_N": thrust_N / throttle,
+                "fuel_flow_per_throttle_kg_s": fuel_flow_kg_s / throttle,
+                "electric_power_per_throttle_W": electric_power_W / throttle,
             }
         )
     return references
@@ -214,8 +219,8 @@ def _isa_speed_of_sound_m_s(altitude_ft):
 
 
 def build_aerosandbox_mission(
-    engine_deck_csv="coupled_mission/data/example_engine_deck.csv",
-    tank_deck_csv="coupled_mission/data/tank_deck_smoke.csv",
+    engine_deck_csv="data/propulsion/example_engine_deck.csv",
+    tank_deck_csv=None,
     config=AeroMissionConfig(),
     airplane=None,
 ):
@@ -494,8 +499,6 @@ def _scalar(prob, name, units=None):
 def _set_duality_initial_values(prob, duality, d3):
     """Apply the same converged-start values used by example_cycles.duality."""
     c = duality.CRUISE_CONDITIONS
-    fan_rline_target = duality.FAN_RLINE_TARGET
-
     prob.set_val("DESIGN_mode2.fc.alt", c["mode2"]["alt_ft"], units="ft")
     prob.set_val("DESIGN_mode2.fc.MN", c["mode2"]["mach"])
     prob.set_val("DESIGN_mode2.balance.rhs:W", duality.PC24_SCALED_THRUST["mode2_turbojet"], units="lbf")
@@ -519,8 +522,6 @@ def _set_duality_initial_values(prob, duality, d3):
     prob.set_val("OD_mode3.balance.rhs:W", d3["nozz"], units="inch**2")
     prob.set_val("OD_mode1.balance.rhs:inlet_area", 0.55)
     prob.set_val("OD_mode2.balance.rhs:inlet_area", 0.60)
-    prob.set_val("OD_mode2.balance.rhs:N_fan1", fan_rline_target)
-    prob.set_val("OD_mode2.balance.rhs:N_fan2", fan_rline_target)
     prob.set_val("OD_mode3.inlet.area", d3["inlet_area"], units="inch**2")
     prob.set_val("OD_mode3.bypass_duct.area", d3["bypass_duct"], units="inch**2")
     prob.set_val("OD_mode3.combustor.area", d3["combustor"], units="inch**2")
@@ -543,8 +544,8 @@ def _set_duality_initial_values(prob, duality, d3):
     prob["OD_mode2.balance.W"] = 35.0
     prob["OD_mode2.balance.inlet_area"] = 260.0
     prob["OD_mode2.balance.FAR"] = 0.035
-    prob["OD_mode2.balance.N_fan1"] = 6000.0
-    prob["OD_mode2.balance.N_fan2"] = 6000.0
+    prob.set_val("OD_mode2.N_fan1", 6000.0, units="rpm")
+    prob.set_val("OD_mode2.N_fan2", 6000.0, units="rpm")
     prob["OD_mode2.fc.balance.Pt"] = c["mode2"]["Pt_psia"]
     prob["OD_mode2.fc.balance.Tt"] = c["mode2"]["Tt_degR"]
     prob.set_val("OD_mode2.inlet.Fl_O:tot:T", c["mode2"]["Tt_degR"], units="degR")
@@ -583,35 +584,21 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
 
     fan1_shaft_power_W = 0.0
     fan2_shaft_power_W = 0.0
-    electric_power = 0.0
-    generator_shaft_power_W = 0.0
+    fan1_speed_rpm = 0.0
+    fan2_speed_rpm = 0.0
+    fan1_area_m2 = 0.0
+    fan2_area_m2 = 0.0
     if mode in {"fan", "fan_ab"}:
         fan1_shaft_power_W = abs(_scalar(prob, f"{point_name}.fan1.power", units="hp")) * hp_to_W
         fan2_shaft_power_W = abs(_scalar(prob, f"{point_name}.fan2.power", units="hp")) * hp_to_W
-        motor_map = ElectricMachineMap(
-            peak_speed_rad_s=6000.0 * 2.0 * 3.141592653589793 / 60.0,
-            peak_torque_N_m=250.0,
-            peak_efficiency=0.96,
-            parasite_loss_ratio=0.35,
-        )
-        generator_map = ElectricMachineMap(
-            peak_speed_rad_s=12000.0 * 2.0 * 3.141592653589793 / 60.0,
-            peak_torque_N_m=150.0,
-            peak_efficiency=0.965,
-            parasite_loss_ratio=0.30,
-        )
-        powertrain = duality_electric_powertrain(
-            fan1_shaft_power_W=fan1_shaft_power_W,
-            fan2_shaft_power_W=fan2_shaft_power_W,
-            fan1_speed_rpm=abs(_scalar(prob, f"{point_name}.N_fan1", units="rpm")),
-            fan2_speed_rpm=abs(_scalar(prob, f"{point_name}.N_fan2", units="rpm")),
-            motor_map=motor_map,
-            generator_map=generator_map,
-            generator_speed_rpm=12000.0,
-            number_engines=2,
-        )
-        electric_power = powertrain["per_engine_motor_electric_W"]
-        generator_shaft_power_W = powertrain["per_engine_generator_shaft_W"]
+        fan1_speed_rpm = abs(_scalar(prob, f"{point_name}.N_fan1", units="rpm"))
+        fan2_speed_rpm = abs(_scalar(prob, f"{point_name}.N_fan2", units="rpm"))
+        fan1_area_m2 = _scalar(prob, f"{point_name}.fan1.Fl_O:stat:area", units="m**2")
+        fan2_area_m2 = _scalar(prob, f"{point_name}.fan2.Fl_O:stat:area", units="m**2")
+
+    max_fan_speed_rpm = max(fan1_speed_rpm, fan2_speed_rpm)
+    max_fan_power_W = max(fan1_shaft_power_W, fan2_shaft_power_W)
+    total_fan_power_W = fan1_shaft_power_W + fan2_shaft_power_W
 
     return {
         "mode": mode,
@@ -620,13 +607,174 @@ def _duality_engine_record(prob, point_name, mode, throttle=1.0):
         "throttle": throttle,
         "thrust_N": _scalar(prob, f"{point_name}.perf.Fn", units="N"),
         "fuel_flow_kg_s": fuel_flow,
-        "electric_power_W": electric_power,
+        "fan1_speed_rpm": fan1_speed_rpm,
+        "fan2_speed_rpm": fan2_speed_rpm,
         "fan1_shaft_power_W": fan1_shaft_power_W,
         "fan2_shaft_power_W": fan2_shaft_power_W,
-        "generator_shaft_power_W": generator_shaft_power_W,
+        "fan_speed_delta_rpm": abs(fan1_speed_rpm - fan2_speed_rpm),
+        "fan_speed_delta_fraction": (
+            abs(fan1_speed_rpm - fan2_speed_rpm) / max_fan_speed_rpm
+            if max_fan_speed_rpm > 0.0
+            else 0.0
+        ),
+        "fan_power_delta_W": abs(fan1_shaft_power_W - fan2_shaft_power_W),
+        "fan_power_delta_fraction": (
+            abs(fan1_shaft_power_W - fan2_shaft_power_W) / max_fan_power_W
+            if max_fan_power_W > 0.0
+            else 0.0
+        ),
+        "fan1_power_fraction": (
+            fan1_shaft_power_W / total_fan_power_W
+            if total_fan_power_W > 0.0
+            else 0.0
+        ),
+        "fan1_area_m2": fan1_area_m2,
+        "fan2_area_m2": fan2_area_m2,
         "inlet_area_m2": _scalar(prob, f"{point_name}.inlet.Fl_O:stat:area", units="m**2"),
         "nozzle_throat_area_m2": _scalar(prob, f"{point_name}.nozz.Throat:stat:area", units="m**2"),
     }
+
+
+def _solver_float_option(solver, name):
+    try:
+        value = solver.options[name]
+    except Exception:
+        return ""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _solver_residual_norm(system):
+    residuals = getattr(system, "_residuals", None)
+    if residuals is None:
+        return ""
+    try:
+        value = residuals.get_norm()
+    except Exception:
+        return ""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return value if math.isfinite(value) else ""
+
+
+def _duality_convergence_record(prob, point_name):
+    """Best-effort convergence telemetry for one pyCycle point."""
+    system = None
+    get_subsystem = getattr(prob.model, "_get_subsystem", None)
+    if get_subsystem is not None:
+        try:
+            system = get_subsystem(point_name)
+        except Exception:
+            system = None
+    if system is None:
+        system = getattr(prob.model, point_name, None)
+
+    solver = getattr(system, "nonlinear_solver", None)
+    residual_norm = _solver_residual_norm(system)
+    solver_atol = _solver_float_option(solver, "atol") if solver is not None else ""
+    solver_rtol = _solver_float_option(solver, "rtol") if solver is not None else ""
+    iterations = ""
+    converged = ""
+    status = "not_available"
+
+    if solver is not None:
+        for attr_name in ("_iter_count", "iter_count"):
+            if hasattr(solver, attr_name):
+                try:
+                    iterations = int(getattr(solver, attr_name))
+                    break
+                except (TypeError, ValueError):
+                    pass
+        for attr_name in ("_converged", "converged"):
+            if hasattr(solver, attr_name):
+                converged = bool(getattr(solver, attr_name))
+                status = "converged" if converged else "failed"
+                break
+
+    if converged == "" and residual_norm != "":
+        threshold = solver_atol if solver_atol != "" else 1e-6
+        converged = residual_norm <= threshold
+        status = "residual_pass" if converged else "residual_fail"
+
+    return {
+        "pycycle_point_name": point_name,
+        "pycycle_converged": converged,
+        "pycycle_residual_norm": residual_norm,
+        "pycycle_solver_iterations": iterations,
+        "pycycle_solver_atol": solver_atol,
+        "pycycle_solver_rtol": solver_rtol,
+        "pycycle_status": status,
+    }
+
+
+def _duality_failed_convergence_record(point_name, error):
+    return {
+        "pycycle_point_name": point_name,
+        "pycycle_converged": False,
+        "pycycle_residual_norm": "",
+        "pycycle_solver_iterations": "",
+        "pycycle_solver_atol": "",
+        "pycycle_solver_rtol": "",
+        "pycycle_status": f"run_model_failed: {type(error).__name__}: {error}",
+    }
+
+
+def _engine_deck_row_to_imperial(row):
+    """Convert engine-deck row values to the imperial CSV convention."""
+    converted = dict(row)
+    new_values = {}
+    rename = {
+        "altitude_m": "altitude_ft",
+        "thrust_N": "thrust_lbf",
+        "fuel_flow_kg_s": "fuel_flow_lbm_s",
+        "fan1_shaft_power_W": "fan1_shaft_power_hp",
+        "fan2_shaft_power_W": "fan2_shaft_power_hp",
+        "fan_power_delta_W": "fan_power_delta_hp",
+        "fan1_area_m2": "fan1_area_in2",
+        "fan2_area_m2": "fan2_area_in2",
+        "inlet_area_m2": "inlet_area_in2",
+        "nozzle_throat_area_m2": "nozzle_throat_area_in2",
+        "required_thrust_N": "required_thrust_lbf",
+        "drag_N": "drag_lbf",
+        "dynamic_pressure_Pa": "dynamic_pressure_lbf_ft2",
+        "velocity_m_s": "velocity_ft_s",
+        "speed_of_sound_m_s": "speed_of_sound_ft_s",
+        "density_kg_m3": "density_slug_ft3",
+        "temperature_K": "temperature_R",
+        "pressure_Pa": "pressure_psf",
+    }
+    scales = {
+        "altitude_m": 3.280839895013123,
+        "thrust_N": 0.22480894387096,
+        "fuel_flow_kg_s": 2.2046226218488,
+        "fan1_shaft_power_W": 0.001341022089595,
+        "fan2_shaft_power_W": 0.001341022089595,
+        "fan_power_delta_W": 0.001341022089595,
+        "fan1_area_m2": 1550.0031000062,
+        "fan2_area_m2": 1550.0031000062,
+        "inlet_area_m2": 1550.0031000062,
+        "nozzle_throat_area_m2": 1550.0031000062,
+        "required_thrust_N": 0.22480894387096,
+        "drag_N": 0.22480894387096,
+        "dynamic_pressure_Pa": 0.020885434273039,
+        "velocity_m_s": 3.280839895013123,
+        "speed_of_sound_m_s": 3.280839895013123,
+        "density_kg_m3": 0.001940320331954,
+        "temperature_K": 1.8,
+        "pressure_Pa": 0.020885434273039,
+    }
+
+    for old_name, new_name in rename.items():
+        if old_name in converted:
+            new_values[new_name] = converted[old_name] * scales[old_name]
+            del converted[old_name]
+
+    converted.update(new_values)
+    return converted
 
 
 def _set_duality_point_condition(prob, point_name, altitude_ft, mach):
@@ -635,14 +783,159 @@ def _set_duality_point_condition(prob, point_name, altitude_ft, mach):
     prob.set_val(f"{point_name}.fc.MN", mach)
 
 
+def _duality_mode_for_mach(mach):
+    """Return the Duality operating mode for the requested deck Mach number."""
+    if mach < 1.0:
+        return "OD_mode1", "fan"
+    if mach < 2.2:
+        # This is the requested intermediate jet mode; the current pyCycle
+        # implementation names it fan_ab because the electric fans remain in
+        # the gas path and fuel is added downstream.
+        return "OD_mode2", "fan_ab"
+    return "OD_mode3", "ramjet"
+
+
+def _duality_condition_is_valid(altitude_ft, mach):
+    if mach >= 3.0 and altitude_ft < 40000.0:
+        return False
+    if mach >= 2.0 and altitude_ft < 30000.0:
+        return False
+    if mach >= 1.0 and altitude_ft < 20000.0:
+        return False
+    return True
+
+
 def _duality_sweep_conditions(altitudes_ft, mach_values, min_speed_kt=10.0):
-    """Yield altitude/Mach pairs, enforcing the 10 kt true-airspeed floor."""
+    """Yield valid altitude/Mach/mode triples for actual pyCycle deck solves."""
     kt_to_m_s = 0.5144444444444445
     for altitude_ft in altitudes_ft:
         min_mach = min_speed_kt * kt_to_m_s / _isa_speed_of_sound_m_s(altitude_ft)
         for mach in mach_values:
-            if mach >= min_mach:
-                yield altitude_ft, mach
+            if mach >= min_mach and _duality_condition_is_valid(altitude_ft, mach):
+                point_name, mode = _duality_mode_for_mach(mach)
+                yield altitude_ft, mach, point_name, mode
+
+
+def _duality_engine_deck_conditions(altitudes_ft, mach_values, max_cases=None):
+    """Return the valid pyCycle deck setup rows, optionally truncated for smoke tests."""
+    conditions = list(_duality_sweep_conditions(altitudes_ft, mach_values))
+    if max_cases is not None:
+        conditions = conditions[:max_cases]
+    if not conditions:
+        raise RuntimeError("No valid altitude/Mach/mode conditions were requested.")
+    return conditions
+
+
+def _condition_key(altitude_ft, mach):
+    return (float(altitude_ft), float(mach))
+
+
+def _duality_conditions_from_operating_points(operating_points, max_cases=None):
+    """Return pyCycle setup rows from explicit mission operating points."""
+    conditions = []
+    seen = set()
+    for point in operating_points:
+        altitude_ft = float(point["altitude_ft"])
+        mach = float(point["mach"])
+        if mach <= 0.0:
+            continue
+        key = _condition_key(altitude_ft, mach)
+        if key in seen:
+            continue
+        seen.add(key)
+        point_name, mode = _duality_mode_for_mach(mach)
+        conditions.append((altitude_ft, mach, point_name, mode))
+
+    if max_cases is not None:
+        conditions = conditions[:max_cases]
+    if not conditions:
+        raise RuntimeError("No valid mission operating points were requested.")
+    return conditions
+
+
+def pycycle_engine_deck_conditions(altitudes_ft, mach_values, max_cases=None):
+    """Return valid engine-deck setup rows as dictionaries."""
+    return [
+        {
+            "altitude_ft": altitude_ft,
+            "altitude_m": altitude_ft * 0.3048,
+            "mach": mach,
+            "point_name": point_name,
+            "mode": mode,
+        }
+        for altitude_ft, mach, point_name, mode in _duality_engine_deck_conditions(
+            altitudes_ft,
+            mach_values,
+            max_cases=max_cases,
+        )
+    ]
+
+
+def pycycle_engine_deck_conditions_from_operating_points(operating_points, max_cases=None):
+    """Return engine-deck setup dictionaries from explicit mission operating points."""
+    return [
+        {
+            "altitude_ft": altitude_ft,
+            "altitude_m": altitude_ft * 0.3048,
+            "mach": mach,
+            "point_name": point_name,
+            "mode": mode,
+        }
+        for altitude_ft, mach, point_name, mode in _duality_conditions_from_operating_points(
+            operating_points,
+            max_cases=max_cases,
+        )
+    ]
+
+
+def preview_pycycle_engine_deck_setup(
+    altitudes_ft,
+    mach_values,
+    max_cases=None,
+    drag_points_by_condition=None,
+    operating_points=None,
+):
+    """Preview the altitude/Mach/mode routing without running pyCycle."""
+    if operating_points is None:
+        conditions = _duality_engine_deck_conditions(altitudes_ft, mach_values)
+    else:
+        conditions = _duality_conditions_from_operating_points(operating_points)
+    mode_counts = {}
+    for _, _, _, mode in conditions:
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+
+    if max_cases is not None:
+        shown = []
+        remaining = list(conditions)
+        for wanted_mode in ("fan", "fan_ab", "ramjet"):
+            for condition in remaining:
+                if condition[3] == wanted_mode:
+                    shown.append(condition)
+                    remaining.remove(condition)
+                    break
+        for condition in remaining:
+            if len(shown) >= max_cases:
+                break
+            shown.append(condition)
+        conditions = shown[:max_cases]
+
+    rows = []
+    for altitude_ft, mach, point_name, mode in conditions:
+        row = {
+            "altitude_ft": altitude_ft,
+            "altitude_m": altitude_ft * 0.3048,
+            "mach": mach,
+            "point_name": point_name,
+            "mode": mode,
+        }
+        if drag_points_by_condition is not None:
+            row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
+        rows.append(row)
+    return {
+        "rows": rows,
+        "mode_counts": mode_counts,
+        "total_candidate_rows": sum(mode_counts.values()),
+    }
 
 
 def _vectorized_fan_map_factor(mach_values):
@@ -724,54 +1017,159 @@ def _expanded_engine_rows_from_baselines(baselines, altitudes_ft, mach_values):
     return rows
 
 
-def write_pycycle_engine_deck(output_csv, altitudes_ft, mach_values):
-    """Run a Duality pyCycle altitude/Mach sweep and write an SI engine deck CSV."""
+def write_pycycle_engine_deck(
+    output_csv,
+    altitudes_ft=None,
+    mach_values=None,
+    max_cases=None,
+    drag_points_by_condition=None,
+    sizing_required_thrust_N=None,
+    operating_points=None,
+):
+    """Run actual Duality pyCycle points over the requested valid altitude/Mach grid."""
+    import os
+
+    os.environ.setdefault("OPENMDAO_REPORTS", "0")
     import openmdao.api as om
     from example_cycles import duality
 
     output_csv = Path(output_csv)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    d3 = duality._run_design_mode3()
+    if operating_points is None:
+        conditions = _duality_engine_deck_conditions(
+            altitudes_ft,
+            mach_values,
+            max_cases=max_cases,
+        )
+    else:
+        conditions = _duality_conditions_from_operating_points(
+            operating_points,
+            max_cases=max_cases,
+        )
+
+    first_ramjet = next(
+        (
+            (altitude_ft, mach)
+            for altitude_ft, mach, _, mode in conditions
+            if mode == "ramjet"
+        ),
+        None,
+    )
+    if sizing_required_thrust_N is None:
+        ramjet_thrust_lbf = duality.PC24_SCALED_THRUST["mode3_ramjet"]
+    else:
+        ramjet_thrust_lbf = sizing_required_thrust_N / 4.4482216152605
+    d3 = (
+        duality._run_design_mode3(
+            alt_ft=first_ramjet[0],
+            mach=first_ramjet[1],
+            thrust_lbf=ramjet_thrust_lbf,
+        )
+        if first_ramjet is not None
+        else None
+    )
+    if d3 is None:
+        d3 = duality._run_design_mode3()
     prob = om.Problem()
     prob.model = duality.MPDuality()
     prob.setup()
     _set_duality_initial_values(prob, duality, d3)
     prob.set_solver_print(level=-1)
-    prob.run_model()
-
-    baseline_points = [
-        ("OD_mode1", "fan", 1.0),
-        ("OD_mode2", "fan_ab", 1.0),
-        ("OD_mode3", "ramjet", 1.0),
-    ]
-    baselines = [
-        _duality_engine_record(prob, point_name, mode, throttle=throttle)
-        for point_name, mode, throttle in baseline_points
-    ]
-    rows = _expanded_engine_rows_from_baselines(baselines, altitudes_ft, mach_values)
-
-    if not rows:
-        raise RuntimeError("pyCycle sweep did not produce any converged engine-deck rows.")
 
     fieldnames = [
         "mode",
         "mach",
-        "altitude_m",
+        "altitude_ft",
         "throttle",
-        "thrust_N",
-        "fuel_flow_kg_s",
-        "electric_power_W",
-        "fan1_shaft_power_W",
-        "fan2_shaft_power_W",
-        "generator_shaft_power_W",
-        "inlet_area_m2",
-        "nozzle_throat_area_m2",
+        "thrust_lbf",
+        "fuel_flow_lbm_s",
+        "fan1_speed_rpm",
+        "fan2_speed_rpm",
+        "fan1_shaft_power_hp",
+        "fan2_shaft_power_hp",
+        "fan_speed_delta_rpm",
+        "fan_speed_delta_fraction",
+        "fan_power_delta_hp",
+        "fan_power_delta_fraction",
+        "fan1_power_fraction",
+        "fan1_area_in2",
+        "fan2_area_in2",
+        "inlet_area_in2",
+        "nozzle_throat_area_in2",
+        "pycycle_point_name",
+        "pycycle_converged",
+        "pycycle_residual_norm",
+        "pycycle_solver_iterations",
+        "pycycle_solver_atol",
+        "pycycle_solver_rtol",
+        "pycycle_status",
+        "required_thrust_lbf",
+        "drag_lbf",
+        "required_thrust_to_weight",
+        "dynamic_pressure_lbf_ft2",
+        "velocity_ft_s",
+        "speed_of_sound_ft_s",
+        "lift_coefficient",
+        "parasite_cd0",
+        "wave_cd0",
+        "zero_lift_drag_coefficient",
+        "lift_dependent_k",
+        "induced_drag_coefficient",
+        "total_drag_coefficient",
+        "density_slug_ft3",
+        "temperature_R",
+        "pressure_psf",
+        "is_stall_limited",
     ]
+
+    rows = []
     with output_csv.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        f.flush()
+
+        for altitude_ft, mach, point_name, mode in conditions:
+            if mode == "ramjet":
+                if drag_points_by_condition is None:
+                    point_thrust_lbf = duality.PC24_SCALED_THRUST["mode3_ramjet"]
+                else:
+                    drag_point = drag_points_by_condition[_condition_key(altitude_ft, mach)]
+                    point_thrust_lbf = drag_point["required_thrust_N"] / 4.4482216152605
+                d3 = duality._run_design_mode3(
+                    alt_ft=altitude_ft,
+                    mach=mach,
+                    thrust_lbf=point_thrust_lbf,
+                )
+                _set_duality_initial_values(prob, duality, d3)
+            _set_duality_point_condition(prob, point_name, altitude_ft, mach)
+            try:
+                prob.run_model()
+            except Exception as error:
+                row = {
+                    "mode": mode,
+                    "mach": mach,
+                    "altitude_ft": altitude_ft,
+                    "throttle": 1.0,
+                }
+                row.update(_duality_failed_convergence_record(point_name, error))
+                if drag_points_by_condition is not None:
+                    row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
+                row = _engine_deck_row_to_imperial(row)
+                writer.writerow(row)
+                f.flush()
+                raise
+            row = _duality_engine_record(prob, point_name, mode, throttle=1.0)
+            row.update(_duality_convergence_record(prob, point_name))
+            if drag_points_by_condition is not None:
+                row.update(drag_points_by_condition[_condition_key(altitude_ft, mach)])
+            row = _engine_deck_row_to_imperial(row)
+            rows.append(row)
+            writer.writerow(row)
+            f.flush()
+
+    if not rows:
+        raise RuntimeError("pyCycle sweep did not produce any converged engine-deck rows.")
     return rows
 
 
@@ -878,35 +1276,18 @@ def main():
     """Generate fresh decks, solve the coupled mission, and plot the result."""
     # Edit these paths directly for local runs.
     airplane_module = None
-    engine_deck_csv = Path("coupled_mission/data/duality_engine_deck.csv")
-    tank_deck_csv = Path("coupled_mission/data/lng_tank_deck.csv")
-    save_plot = Path("coupled_mission/data/aerosandbox_flight_profile.png")
+    engine_deck_csv = Path("data/propulsion/duality_engine_deck.csv")
+    tank_deck_csv = None
+    save_plot = Path("coupled_mission/aerosandbox_flight_profile.png")
     show_plot = False
     propellant = "LNG"
-    engine_altitudes_ft = tuple(range(0, 100001, 10000))
-    engine_mach_values = (
-        0.02,
-        0.05,
-        0.10,
-        0.20,
-        0.30,
-        0.50,
-        0.70,
-        0.90,
-        1.10,
-        1.50,
-        2.00,
-        2.50,
-        3.00,
-        3.50,
-        4.00,
-        4.50,
-        5.00,
-    )
+    engine_altitudes_ft = tuple(float(altitude_ft) for altitude_ft in range(0, 70001, 5000))
+    engine_mach_values = tuple(round(0.25 * i, 2) for i in range(1, 14))
 
-    print(f"Generating tank deck: {tank_deck_csv}")
-    tank_results = write_tank_deck(build_default_tank_cases(propellant), tank_deck_csv)
-    print(f"Wrote {len(tank_results)} tank cases.")
+    if tank_deck_csv is not None:
+        print(f"Generating tank deck: {tank_deck_csv}")
+        tank_results = write_tank_deck(build_default_tank_cases(propellant), tank_deck_csv)
+        print(f"Wrote {len(tank_results)} tank cases.")
 
     print(f"Generating pyCycle engine deck: {engine_deck_csv}")
     engine_rows = write_pycycle_engine_deck(

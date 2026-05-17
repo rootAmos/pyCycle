@@ -146,6 +146,10 @@ def calculate_aircraft_volume(inputs: AircraftVolumeInputs):
     return aircraft_volume_breakdown(inputs)["total_aircraft_volume_m3"]
 
 
+def aircraft_volume_breakdown_from_aircraft(aircraft):
+    return aircraft_volume_breakdown(aircraft.to_volume_inputs())
+
+
 def main():
     # Edit run options here.
     breakdown = aircraft_volume_breakdown(

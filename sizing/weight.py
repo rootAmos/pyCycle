@@ -8,6 +8,8 @@ available.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
+import csv
 
 import aerosandbox as asb
 import aerosandbox.numpy as np
@@ -92,6 +94,7 @@ class WeightInputs:
     crew_weight_lb: object = 200.0
     passenger_weight_lb: object = 200.0
     cargo_weight_lb: object = 0.0
+    furnishings_weight_lb: object = 217.6
     fuel_weight_lb: object = 0.0
     tank_dry_weight_lb: object = 0.0
     custom_propulsion_weight_lb: object = 0.0
@@ -294,7 +297,7 @@ def avionics_weight_lb(x: WeightInputs):
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.22.
 def furnishings_weight_lb(x: WeightInputs):
-    return 217.6 * x.number_crew
+    return x.furnishings_weight_lb
 
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.23.
@@ -500,54 +503,76 @@ def _weight_breakdown(inputs: WeightInputs):
     }
 
 
+def write_weight_breakdown_csv(inputs: WeightInputs, output_csv):
+    breakdown = _weight_breakdown(inputs)
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for name, weight_lb in breakdown["components_lb"].items():
+        component = name.removesuffix("_lb")
+        rows.append(
+            {
+                "group": "raymer_component",
+                "component": component,
+                "weight_lb": float(weight_lb),
+                "mass_kg": float(weight_lb * u.lbm),
+            }
+        )
+    for component, weight_lb in (
+        ("crew_payload", breakdown["crew_payload_lb"]),
+        ("passenger_payload", breakdown["passenger_payload_lb"]),
+        ("payload_total", breakdown["payload_lb"]),
+        ("fuel", breakdown["fuel_weight_lb"]),
+        ("tank_dry", breakdown["tank_dry_weight_lb"]),
+        ("custom_propulsion", breakdown["custom_propulsion_weight_lb"]),
+        ("structure_total", breakdown["structure_lb"]),
+        ("systems_total", breakdown["systems_lb"]),
+        ("operating_empty_without_engine", breakdown["operating_empty_without_engine_lb"]),
+        ("total_aircraft", breakdown["total_aircraft_weight_lb"]),
+    ):
+        rows.append(
+            {
+                "group": "total",
+                "component": component,
+                "weight_lb": float(weight_lb),
+                "mass_kg": float(weight_lb * u.lbm),
+            }
+        )
+    with output_csv.open("w", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("group", "component", "weight_lb", "mass_kg"),
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return output_csv
+
+
 def calculate__weight(inputs: WeightInputs):
     """Return the total aircraft weight in lb."""
     return _weight_breakdown(inputs)["total_aircraft_weight_lb"]
 
 
+def weight_breakdown_from_aircraft(aircraft):
+    return _weight_breakdown(aircraft.to_weight_inputs())
+
+
+def write_aircraft_weight_breakdown_csv(aircraft, output_csv):
+    return write_weight_breakdown_csv(aircraft.to_weight_inputs(), output_csv)
+
+
 def main():
     # Edit run options here.
-    inputs = WeightInputs(
-        design_gross_weight_lb=12000.0,
-        landing_design_gross_weight_lb=10000.0,
-        ultimate_load_factor=7.5,
-        landing_ultimate_load_factor=4.5,
-        mach=0.8,
-        dynamic_pressure_lb_ft2=250.0,
-        wing_area_ft2=250.0,
-        aspect_ratio=6.0,
-        taper_ratio=0.35,
-        sweep_25_rad=np.radians(20.0),
-        root_thickness_to_chord=0.12,
-        wing_mounted_control_area_ft2=30.0,
-        horizontal_tail_area_ft2=55.0,
-        horizontal_tail_span_ft=15.0,
-        fuselage_width_at_htail_ft=5.0,
-        vertical_tail_area_ft2=42.0,
-        vertical_tail_aspect_ratio=1.4,
-        vertical_tail_height_ft=7.0,
-        horizontal_tail_height_ft=0.0,
-        tail_length_ft=25.0,
-        rudder_area_ft2=10.0,
-        fuselage_structural_length_ft=45.0,
-        fuselage_structural_depth_ft=6.0,
-        fuselage_structural_width_ft=5.0,
-        main_gear_length_in=42.0,
-        nose_gear_length_in=30.0,
-        number_engines=2.0,
-        engine_weight_each_lb=0.0,
-        total_engine_thrust_lb=6000.0,
-        thrust_per_engine_lb=3000.0,
-        engine_diameter_ft=2.0,
-        engine_front_to_cockpit_length_ft=20.0,
-        total_fuel_volume_gal=600.0,
-        number_mechanical_functions=1.0,
-        number_generators=2.0,
-        fuel_weight_lb=3000.0,
-        tank_dry_weight_lb=700.0,
-        custom_propulsion_weight_lb=1200.0,
-    )
+    output_csv = Path("data/sizing/weight_breakdown.csv")
+    try:
+        from .aircraft import Aircraft
+    except ImportError:
+        from aircraft import Aircraft
+
+    aircraft = Aircraft.from_json()
+    inputs = aircraft.to_weight_inputs()
     breakdown = _weight_breakdown(inputs)
+    write_weight_breakdown_csv(inputs, output_csv)
 
     print(" weight breakdown")
     print(f"Total aircraft weight: {breakdown['total_aircraft_weight_lb']:.3f} lb")
@@ -561,6 +586,7 @@ def main():
     print(f"  Structure: {breakdown['structure_lb']:.3f} lb")
     print(f"  Systems: {breakdown['systems_lb']:.3f} lb")
     print(f"  Raymer propulsion accessories omitted: {breakdown['raymer_propulsion_accessories_omitted_lb']:.3f} lb")
+    print(f"Weight breakdown CSV: {output_csv}")
 
 
 if __name__ == "__main__":

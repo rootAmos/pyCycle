@@ -1,0 +1,1 @@
+"""Propulsion reference data."""

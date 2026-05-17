@@ -28,10 +28,17 @@ from data.aero.interpolators import (
 try:
     from .aircraft import (
         Aircraft,
+        DEFAULT_AIRCRAFT_JSON,
         FuelSystem,
         Payload,
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
+        fuel_from_definition,
+        load_aircraft_definition,
+        interiors_from_definition,
+        payload_from_definition,
+        propulsion_from_definition,
+        systems_from_definition,
     )
     from .constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from .volume import aircraft_volume_breakdown
@@ -39,10 +46,17 @@ try:
 except ImportError:
     from aircraft import (
         Aircraft,
+        DEFAULT_AIRCRAFT_JSON,
         FuelSystem,
         Payload,
         PropulsionSystem,
         build_geometric_asb_airplane as build_airplane,
+        fuel_from_definition,
+        load_aircraft_definition,
+        interiors_from_definition,
+        payload_from_definition,
+        propulsion_from_definition,
+        systems_from_definition,
     )
     from constraint_equations import design_point_thrust_to_weight_from_wing_loading
     from volume import aircraft_volume_breakdown
@@ -81,25 +95,10 @@ class ConstraintDesignPoint:
 
 @dataclass(frozen=True)
 class ConstraintDiagramConfig:
-    engine_deck_csv: object = "coupled_mission/data/example_engine_deck.csv"
-    fuel_mass_kg: object = 1200.0
-    propulsion_volume_m3: object = 3.0
-    payload_volume_m3: object = 5.0
-    tank_dry_mass_kg: object = 350.0
+    aircraft_json: object = DEFAULT_AIRCRAFT_JSON
+    engine_deck_csv: object = "data/propulsion/example_engine_deck.csv"
     kuechemann_tau: object = 0.0446
     void_volume_coefficient: object = 0.05
-    fuel_density_kg_m3: object = 422.0
-    number_engines: object = 2.0
-    number_propulsive_motors: object = 4.0
-    number_generators: object = 4.0
-    number_turbines: object = 1.0
-    electric_propulsor_mach_limit: object = 1.2
-    propulsive_efficiency: object = 0.75
-    motor_controller_power_density_W_kg: object = 8000.0
-    generator_power_density_W_kg: object = 8000.0
-    turbine_power_density_W_kg: object = 6000.0
-    generator_efficiency: object = 0.96
-    turbine_mechanical_efficiency: object = 0.98
     thrust_scale: object = 1.0
     wing_form_factor: object = 1.15
     tail_form_factor: object = 1.15
@@ -245,19 +244,49 @@ def default_constraint_design_points():
     )
 
 
+def config_propulsion(config, **overrides):
+    return propulsion_from_definition(config.aircraft_json, **overrides)
+
+
+def config_fuel(config, **overrides):
+    return fuel_from_definition(config.aircraft_json, **overrides)
+
+
+def config_payload(config, **overrides):
+    return payload_from_definition(config.aircraft_json, **overrides)
+
+
+def config_systems(config, **overrides):
+    return systems_from_definition(config.aircraft_json, **overrides)
+
+
+def config_interiors(config, **overrides):
+    return interiors_from_definition(config.aircraft_json, **overrides)
+
+
 def read_pycycle_engine_deck(engine_deck_csv):
     rows = []
     with Path(engine_deck_csv).open(newline="") as f:
         for row in csv.DictReader(f):
+            if "altitude_ft" in row:
+                altitude_m = float(row["altitude_ft"]) * 0.3048
+                thrust_N = float(row["thrust_lbf"]) * 4.4482216152605
+                fuel_flow_kg_s = float(row["fuel_flow_lbm_s"]) * 0.45359237
+                electric_power_W = float(row.get("electric_power_hp") or 0.0) * 745.6998715822702
+            else:
+                altitude_m = float(row["altitude_m"])
+                thrust_N = float(row["thrust_N"])
+                fuel_flow_kg_s = float(row["fuel_flow_kg_s"])
+                electric_power_W = float(row.get("electric_power_W") or 0.0)
             rows.append(
                 {
                     "mode": row["mode"],
                     "mach": float(row["mach"]),
-                    "altitude_m": float(row["altitude_m"]),
+                    "altitude_m": altitude_m,
                     "throttle": float(row["throttle"]),
-                    "thrust_N": float(row["thrust_N"]),
-                    "fuel_flow_kg_s": float(row["fuel_flow_kg_s"]),
-                    "electric_power_W": float(row.get("electric_power_W") or 0.0),
+                    "thrust_N": thrust_N,
+                    "fuel_flow_kg_s": fuel_flow_kg_s,
+                    "electric_power_W": electric_power_W,
                 }
             )
     if not rows:
@@ -380,7 +409,7 @@ def drag_geometry_from_planform_area(planform_area_m2, config):
         * np.pi
         * fuselage_width_m
         * fuselage_height_m,
-        "nacelle_wetted_area_m2": config.number_engines
+        "nacelle_wetted_area_m2": config_propulsion(config).number_engines
         * np.pi
         * engine_diameter_m
         * engine_length_m,
@@ -986,6 +1015,14 @@ def required_tw_for_design_point(
 
 def weight_inputs_from_coupled_sizing(takeoff_mass_kg, planform_area_m2, config):
     fuselage_length_m = 4.0 * planform_area_m2**0.5
+    propulsion = config_propulsion(
+        config,
+        mass_kg=0.0,
+        engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+    )
+    fuel = config_fuel(config)
+    systems = config_systems(config)
+    interiors = config_interiors(config)
     span_m = (planform_area_m2 * 3.0) ** 0.5
     root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + 0.25))
     tip_chord_m = 0.25 * root_chord_m
@@ -1014,18 +1051,11 @@ def weight_inputs_from_coupled_sizing(takeoff_mass_kg, planform_area_m2, config)
         airplane=airplane,
         mass_kg=takeoff_mass_kg,
         landing_mass_kg=0.85 * takeoff_mass_kg,
-        propulsion=PropulsionSystem(
-            mass_kg=0.0,
-            number_engines=config.number_engines,
-            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
-        ),
-        fuel=FuelSystem(
-            mass_kg=config.fuel_mass_kg,
-            volume_m3=config.fuel_mass_kg / config.fuel_density_kg_m3,
-            fuel_density_kg_m3=config.fuel_density_kg_m3,
-            tank_dry_mass_kg=config.tank_dry_mass_kg,
-        ),
+        propulsion=propulsion,
+        fuel=fuel,
         payload=Payload(),
+        systems=systems,
+        interiors=interiors,
     ).to_weight_inputs()
 
 
@@ -1037,6 +1067,7 @@ def propulsion_system_sizing_breakdown(
     drag_geometry=None,
 ):
     """Return propulsor power split and component masses from a dry sizing point."""
+    propulsion = config_propulsion(config)
     takeoff_weight_N = takeoff_mass_kg * 9.80665
     sizing_cases = []
     skipped_cases = []
@@ -1044,7 +1075,7 @@ def propulsion_system_sizing_breakdown(
         if not design_point.include_in_governing:
             continue
         sizing_mach = propulsion_sizing_mach(design_point)
-        if sizing_mach > config.electric_propulsor_mach_limit:
+        if sizing_mach > propulsion.electric_propulsor_mach_limit:
             skipped_cases.append(
                 {
                     "name": design_point.name,
@@ -1062,7 +1093,7 @@ def propulsion_system_sizing_breakdown(
         required_thrust_N = required_thrust_to_weight * takeoff_weight_N
         velocity_m_s = propulsion_sizing_velocity_m_s(design_point)
         propulsive_power_W = (
-            required_thrust_N * velocity_m_s / config.propulsive_efficiency
+            required_thrust_N * velocity_m_s / propulsion.propulsive_efficiency
         )
         sizing_cases.append(
             {
@@ -1083,26 +1114,26 @@ def propulsion_system_sizing_breakdown(
 
     governing_case = max(sizing_cases, key=lambda item: item["propulsive_power_W"])
     propulsive_power_W = governing_case["propulsive_power_W"]
-    motor_power_each_W = propulsive_power_W / config.number_propulsive_motors
-    generator_electric_power_W = propulsive_power_W / config.generator_efficiency
-    generator_power_each_W = generator_electric_power_W / config.number_generators
+    motor_power_each_W = propulsive_power_W / propulsion.number_propulsive_motors
+    generator_electric_power_W = propulsive_power_W / propulsion.generator_efficiency
+    generator_power_each_W = generator_electric_power_W / propulsion.number_generators
     turbine_shaft_power_W = (
-        generator_electric_power_W / config.turbine_mechanical_efficiency
+        generator_electric_power_W / propulsion.turbine_mechanical_efficiency
     )
     motor_controller_mass_kg = (
-        config.number_propulsive_motors
+        propulsion.number_propulsive_motors
         * motor_power_each_W
-        / config.motor_controller_power_density_W_kg
+        / propulsion.motor_controller_power_density_W_kg
     )
     generator_mass_kg = (
-        config.number_generators
+        propulsion.number_generators
         * generator_power_each_W
-        / config.generator_power_density_W_kg
+        / propulsion.generator_power_density_W_kg
     )
     turbine_mass_kg = (
-        config.number_turbines
+        propulsion.number_turbines
         * turbine_shaft_power_W
-        / config.turbine_power_density_W_kg
+        / propulsion.turbine_power_density_W_kg
     )
     total_mass_kg = motor_controller_mass_kg + generator_mass_kg + turbine_mass_kg
     return {
@@ -1155,23 +1186,24 @@ def _solve_coupled_weight_volume_once(
         rudder_area_m2=0.025 * planform_area_m2,
         wing_mounted_control_area_m2=0.08 * planform_area_m2,
     )
+    propulsion = config_propulsion(
+        config,
+        mass_kg=propulsion_mass_kg,
+        engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
+    )
+    fuel = config_fuel(config)
+    payload = config_payload(config)
+    systems = config_systems(config)
+    interiors = config_interiors(config)
     aircraft = Aircraft(
         airplane=airplane,
         mass_kg=takeoff_mass_kg,
         landing_mass_kg=0.85 * takeoff_mass_kg,
-        propulsion=PropulsionSystem(
-            mass_kg=propulsion_mass_kg,
-            volume_m3=config.propulsion_volume_m3,
-            number_engines=config.number_engines,
-            engine_front_to_cockpit_length_m=0.35 * fuselage_length_m,
-        ),
-        fuel=FuelSystem(
-            mass_kg=config.fuel_mass_kg,
-            volume_m3=config.fuel_mass_kg / config.fuel_density_kg_m3,
-            fuel_density_kg_m3=config.fuel_density_kg_m3,
-            tank_dry_mass_kg=config.tank_dry_mass_kg,
-        ),
-        payload=Payload(volume_m3=config.payload_volume_m3),
+        propulsion=propulsion,
+        fuel=fuel,
+        payload=payload,
+        systems=systems,
+        interiors=interiors,
     )
     volume_inputs = aircraft.to_volume_inputs()
     volume = aircraft_volume_breakdown(
@@ -1226,6 +1258,20 @@ def _solve_coupled_weight_volume_once(
         "takeoff_weight_N": solved_takeoff_mass_kg * 9.80665,
         "wing_loading_N_m2": solved_wing_loading_N_m2,
         "drag_geometry": solved_drag_geometry,
+        "aircraft": Aircraft(
+            airplane=airplane,
+            mass_kg=solved_takeoff_mass_kg,
+            landing_mass_kg=0.85 * solved_takeoff_mass_kg,
+            propulsion=config_propulsion(
+                config,
+                mass_kg=propulsion_mass_kg,
+                engine_front_to_cockpit_length_m=0.35 * sol(fuselage_length_m),
+            ),
+            fuel=fuel,
+            payload=payload,
+            systems=systems,
+            interiors=interiors,
+        ),
         "volume": solved_volume,
         "weight": solved_weight,
     }
@@ -1345,6 +1391,87 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
     }
 
 
+def engine_deck_aircraft_sizing(config=ConstraintDiagramConfig(), design_points=None):
+    """Return the coupled aircraft sizing state used to build engine-deck requests."""
+    design_points = design_points or default_constraint_design_points()
+    result = build_constraint_diagram(config=config, design_points=design_points)
+    coupled = result["coupled"]
+    cruise_design_point = next(
+        point
+        for point in design_points
+        if point.name == "Case 1: constant-altitude/speed cruise"
+    )
+    sizing_thrust_N = (
+        coupled["required_thrust_to_weight"] * coupled["takeoff_weight_N"]
+    )
+    return {
+        "constraint_result": result,
+        "config": config,
+        "design_points": design_points,
+        "cruise_constraint_design_point": cruise_design_point,
+        "cruise_constraint_mach": propulsion_sizing_mach(cruise_design_point),
+        "cruise_constraint_altitude_ft": representative_altitude_m(cruise_design_point) / u.foot,
+        "planform_area_m2": coupled["planform_area_m2"],
+        "takeoff_mass_kg": coupled["takeoff_mass_kg"],
+        "takeoff_weight_N": coupled["takeoff_weight_N"],
+        "wing_loading_N_m2": coupled["wing_loading_N_m2"],
+        "drag_geometry": coupled["drag_geometry"],
+        "aircraft": coupled["aircraft"],
+        "sizing_required_thrust_N": sizing_thrust_N,
+        "sizing_required_thrust_to_weight": coupled["required_thrust_to_weight"],
+        "propulsion_sizing": coupled["propulsion_sizing"],
+    }
+
+
+def engine_deck_drag_point(aircraft_sizing, mach, altitude_m):
+    """Return atmospheric and drag-derived thrust metrics for one deck condition."""
+    config = aircraft_sizing["config"]
+    atmosphere = asb.Atmosphere(altitude=altitude_m)
+    velocity_m_s = mach * atmosphere.speed_of_sound()
+    dynamic_pressure_Pa = 0.5 * atmosphere.density() * velocity_m_s**2
+    lift_coefficient = (
+        aircraft_sizing["takeoff_weight_N"]
+        / (dynamic_pressure_Pa * aircraft_sizing["planform_area_m2"])
+    )
+    drag = drag_build_up_coefficients(
+        config=config,
+        drag_geometry=aircraft_sizing["drag_geometry"],
+        altitude_m=altitude_m,
+        velocity_m_s=velocity_m_s,
+        lift_coefficient=lift_coefficient,
+    )
+    induced_drag_coefficient = drag["lift_dependent_k"] * lift_coefficient**2.0
+    total_drag_coefficient = (
+        drag["zero_lift_drag_coefficient"] + induced_drag_coefficient
+    )
+    drag_N = (
+        dynamic_pressure_Pa
+        * aircraft_sizing["planform_area_m2"]
+        * total_drag_coefficient
+    )
+    return {
+        "mach": mach,
+        "altitude_m": altitude_m,
+        "temperature_K": atmosphere.temperature(),
+        "pressure_Pa": atmosphere.pressure(),
+        "density_kg_m3": atmosphere.density(),
+        "speed_of_sound_m_s": atmosphere.speed_of_sound(),
+        "velocity_m_s": velocity_m_s,
+        "dynamic_pressure_Pa": dynamic_pressure_Pa,
+        "lift_coefficient": lift_coefficient,
+        "zero_lift_drag_coefficient": drag["zero_lift_drag_coefficient"],
+        "parasite_cd0": drag["parasite_cd0"],
+        "wave_cd0": drag["wave_cd0"],
+        "lift_dependent_k": drag["lift_dependent_k"],
+        "induced_drag_coefficient": induced_drag_coefficient,
+        "total_drag_coefficient": total_drag_coefficient,
+        "drag_N": drag_N,
+        "required_thrust_N": drag_N,
+        "required_thrust_to_weight": drag_N / aircraft_sizing["takeoff_weight_N"],
+        "is_stall_limited": lift_coefficient > config.drag_plot_cl_max,
+    }
+
+
 def plot_constraint_diagram(result, save_plot=None, show_plot=False):
     import matplotlib.pyplot as plt
 
@@ -1357,6 +1484,14 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
         "Concorde": 408000.0 / 3856.0,
         "SR-71 Blackbird": 84.0,
     }
+    reference_thrust_to_weights = {
+        "Concorde": 4.0 * 38050.0 / 408000.0,
+        "SR-71 Blackbird": 2.0 * 32500.0 / 140000.0,
+    }
+    reference_colors = {
+        "Concorde": "tab:purple",
+        "SR-71 Blackbird": "tab:brown",
+    }
     fig, ax = plt.subplots(figsize=(10.5, 6.5), constrained_layout=True)
 
     for name, curve in result["curves"].items():
@@ -1365,13 +1500,6 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
             curve["required_thrust_to_weight"],
             linewidth=1.8,
             label=f"{name} required",
-        )
-        ax.axhline(
-            curve["available_thrust_to_weight"],
-            linestyle="--",
-            linewidth=1.0,
-            alpha=0.5,
-            label=f"{name} pyCycle available",
         )
 
     ax.plot(
@@ -1398,17 +1526,26 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
     for reference_name, reference_wing_loading_lb_ft2 in reference_wing_loadings_lb_ft2.items():
         ax.axvline(
             reference_wing_loading_lb_ft2,
-            color="0.35",
+            color=reference_colors[reference_name],
             linestyle="--",
             linewidth=1.2,
             alpha=0.8,
             label=f"{reference_name} W/S",
         )
+    for reference_name, reference_thrust_to_weight in reference_thrust_to_weights.items():
+        ax.axhline(
+            reference_thrust_to_weight,
+            color=reference_colors[reference_name],
+            linestyle="--",
+            linewidth=1.2,
+            alpha=0.8,
+            label=f"{reference_name} design T/W",
+        )
 
     ax.set_xlabel("Wing loading W/S, lb/ft^2")
     ax.set_ylabel("Design thrust-to-weight T/W")
     ax.set_title(" constraint diagram")
-    ax.set_xlim(0.0, 150.0)
+    ax.set_xlim(20.0, 150.0)
     ax.grid(True, alpha=0.3)
     ax.set_ylim(bottom=0.0)
     ax.legend(loc="upper left", fontsize=8, ncols=2)
@@ -1984,11 +2121,7 @@ def plot_lift_dependent_k_vs_mach(
 def main():
     # Edit run options here.
     config = ConstraintDiagramConfig(
-        engine_deck_csv="coupled_mission/data/example_engine_deck.csv",
-        fuel_mass_kg=1200.0,
-        propulsion_volume_m3=3.0,
-        payload_volume_m3=5.0,
-        tank_dry_mass_kg=350.0,
+        engine_deck_csv="data/propulsion/example_engine_deck.csv",
         thrust_scale=1.0,
         save_plot="_constraint_diagram.png",
         show_plot=False,

@@ -87,7 +87,7 @@ the mission model needs vector-valued profiles.
 
 ## Engine Deck
 
-`coupled_mission/data/example_engine_deck.csv` shows the required columns:
+`data/propulsion/example_engine_deck.csv` shows the required columns:
 
 ```text
 mode,mach,altitude_m,throttle,thrust_N,fuel_flow_kg_s,electric_power_W,inlet_area_m2,nozzle_throat_area_m2

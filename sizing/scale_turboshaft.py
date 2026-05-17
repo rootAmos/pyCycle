@@ -1,4 +1,8 @@
 """
+Reference-only design-point model. For aircraft sizing and mission deck work,
+use `scripts/scaled_turboshaft_deck.py` with
+`data/propulsion/turbine/turboshaft_1120hp.csv`.
+
 Scale the Mistè & Benini (2012) T700 turboshaft design point to a target FPT shaft power.
 
 Source of baseline: Mistè, G.A. & Benini, E., "Performance of a Turboshaft Engine

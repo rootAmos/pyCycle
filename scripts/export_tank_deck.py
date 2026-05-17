@@ -33,7 +33,7 @@ def build_cases(propellant):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--propellant", choices=["LNG", "LH2"], default="LNG")
-    parser.add_argument("--out", default="coupled_mission/data/tank_deck.csv")
+    parser.add_argument("--out", default="data/tanks/tank_deck.csv")
     args = parser.parse_args()
 
     output = Path(args.out)

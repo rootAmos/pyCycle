@@ -11,3 +11,4 @@ pycycle.egg-info/*
 *testflo_report.out
 *.openmdao_out
 om_pycycle.egg-info/
+duality_sizing.egg-info/
