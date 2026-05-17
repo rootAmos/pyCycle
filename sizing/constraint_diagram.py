@@ -1158,8 +1158,12 @@ def _solve_coupled_weight_volume_once(
 ):
     design_points = design_points or default_constraint_design_points()
     opti = asb.Opti()
-    planform_area_m2 = opti.variable(init_guess=80.0, lower_bound=1.0, scale=100.0)
-    takeoff_mass_kg = opti.variable(init_guess=4000.0, lower_bound=100.0, scale=5000.0)
+    log_planform_area_m2 = opti.variable(init_guess=np.log(80.0), scale=5.0)
+    log_takeoff_mass_kg = opti.variable(init_guess=np.log(4000.0), scale=10.0)
+    planform_area_m2 = np.exp(log_planform_area_m2)
+    takeoff_mass_kg = np.exp(log_takeoff_mass_kg)
+    opti.subject_to(log_planform_area_m2 >= np.log(1.0))
+    opti.subject_to(log_takeoff_mass_kg >= np.log(100.0))
 
     fuselage_length_m = 4.0 * planform_area_m2**0.5
     span_m = (planform_area_m2 * 3.0) ** 0.5
@@ -1231,7 +1235,7 @@ def _solve_coupled_weight_volume_once(
     }
     solved_weight = {
         "operating_empty_without_engine_lb": sol(weight["operating_empty_without_engine_lb"]),
-        "custom_propulsion_weight_lb": sol(weight["custom_propulsion_weight_lb"]),
+        "duality_weight_lb": sol(weight["duality_weight_lb"]),
         "tank_dry_weight_lb": sol(weight["tank_dry_weight_lb"]),
         "total_aircraft_weight_lb": sol(weight["total_aircraft_weight_lb"]),
         "total_aircraft_mass_kg": sol(weight["total_aircraft_mass_kg"]),
@@ -2197,7 +2201,7 @@ def main():
     print(f"S_plan: {coupled['planform_area_m2']:.3f} m^2")
     print(f"TO mass: {coupled['takeoff_mass_kg']:.3f} kg")
     print(f"OEW without engine: {coupled['weight']['operating_empty_without_engine_lb'] * u.lbm:.3f} kg")
-    print(f"Propulsion mass: {coupled['weight']['custom_propulsion_weight_lb'] * u.lbm:.3f} kg")
+    print(f"Duality mass: {coupled['weight']['duality_weight_lb'] * u.lbm:.3f} kg")
     print(f"Tank dry mass: {coupled['weight']['tank_dry_weight_lb'] * u.lbm:.3f} kg")
     print(f"W/S: {coupled['wing_loading_N_m2']:.3f} N/m^2")
     drag_geometry = coupled["drag_geometry"]

@@ -1,35 +1,58 @@
-group,component,weight_lb,mass_kg
-raymer_component,wing,3099.941678425048,1406.1098927785954
-raymer_component,horizontal_tail,178.94161946065935,81.1665532627986
-raymer_component,vertical_tail,84.76683779685821,38.449590853682494
-raymer_component,fuselage,7672.8538356397,3480.3479559714024
-raymer_component,main_landing_gear,514.5504734259304,233.3961687258898
-raymer_component,nose_landing_gear,162.07977504889755,73.51814929349631
-raymer_component,engine_mounts,38.91969280592189,17.65367569951006
-raymer_component,firewall,0.0,0.0
-raymer_component,engine_section,0.0,0.0
-raymer_component,air_induction,75.07544413709357,34.05364863494688
-raymer_component,tailpipe,0.0,0.0
-raymer_component,engine_cooling,0.0,0.0
-raymer_component,oil_cooling,76.8555456160436,34.86108908362433
-raymer_component,engine_controls,46.33191355549171,21.01580247627061
-raymer_component,pneumatic_starter,30.625032329729493,13.891280995768623
-raymer_component,fuel_system_and_tanks,0.0,0.0
-raymer_component,flight_controls,71.31177134286459,32.346475372308035
-raymer_component,instruments,133.6857518534905,60.638837018456655
-raymer_component,hydraulics,108.39496740133474,49.16713015964417
-raymer_component,electrical,342.2423308494614,155.2385099643313
-raymer_component,avionics,1082.1907459939857,490.87346526748
-raymer_component,furnishings,217.6,98.701699712
-raymer_component,air_conditioning_anti_ice,201.6,91.44422179200001
-raymer_component,handling_gear,2.8219169559664334,1.2800000000000002
-total,crew_payload,200.0,90.718474
-total,passenger_payload,1000.0,453.59237
-total,payload_total,1200.0,544.310844
-total,fuel,2645.547146218531,1200.0
-total,tank_dry,771.6179176470715,350.0
-total,custom_propulsion,992.0801798319491,450.0
-total,structure_total,11713.134219797093,5312.988310885865
-total,systems_total,2159.8474843971035,979.6903392862203
-total,operating_empty_without_engine,14644.59962184127,6642.678650172085
-total,total_aircraft,19482.226947891748,8836.989494172085
+group,ata,component,qty,unit_mass_kg,total_mass_kg,x_m,y_m,z_m,mx_kgm,my_kgm,mz_kgm,notes
+item,21,air_conditioning_anti_ice,1,91.44422179200001,91.44422179200001,16.5,0.0,2.34,1508.8296595680001,0.0,213.97947899328,
+item,22,instruments,1,60.638837018456655,60.638837018456655,4.5,0.0,2.52,272.87476658305496,0.0,152.80986928651078,
+item,23,avionics,1,490.87346526748,490.87346526748,5.4,0.0,2.34,2650.716712444392,0.0,1148.6439087259032,
+item,24,electrical,1,155.2385099643313,155.2385099643313,11.4,0.0,1.98,1769.719013593377,0.0,307.372249729376,
+item,24,generators,1,81.0,81.0,22.8,0.0,2.232,1846.8,0.0,180.79200000000003,
+item,24,lv_system,1,18.0,18.0,11.4,0.0,1.98,205.20000000000002,0.0,35.64,
+item,25,crew,1,90.718474,90.718474,5.4,0.0,1.98,489.87975960000006,0.0,179.62257852,
+item,25,furnishings,1,98.701699712,98.701699712,12.0,0.0,1.98,1184.4203965440001,0.0,195.42936542976003,
+item,25,passengers,1,453.59237,453.59237,12.6,0.0,1.98,5715.263862,0.0,898.1128926,
+item,26,ata_26_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,27,flight_controls,1,32.346475372308035,32.346475372308035,16.5,0.0,2.52,533.7168436430826,0.0,81.51311793821625,
+item,28,fuel,1,1200.0,1200.0,12.9,0.0,1.62,15480.0,0.0,1944.0000000000002,
+item,28,fuel_system_and_tanks,1,0.0,0.0,12.9,0.0,1.62,0.0,0.0,0.0,
+item,29,hydraulics,1,49.16713015964417,49.16713015964417,14.4,0.0,1.62,708.006674298876,0.0,79.65075085862355,
+item,30,ata_30_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,31,ata_31_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,32,main_landing_gear,1,233.3961687258898,233.3961687258898,14.4,0.0,-0.36,3360.904829652813,0.0,-84.02262074132032,
+item,32,nose_landing_gear,1,73.51814929349631,73.51814929349631,3.6,0.0,-0.36,264.6653374565867,0.0,-26.46653374565867,
+item,33,ata_33_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,34,ata_34_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,35,ata_35_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,36,ata_36_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,37,handling_gear,1,1.2800000000000002,1.2800000000000002,13.5,0.0,0.9,17.280000000000005,0.0,1.1520000000000004,
+item,38,ata_38_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,49,ata_49_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,50,cargo,1,0.0,0.0,18.0,0.0,1.26,0.0,0.0,0.0,
+item,52,ata_52_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,53,fuselage,1,3480.3479559714024,3480.3479559714024,13.8,0.0,1.8,48028.80179240536,0.0,6264.626320748524,
+item,54,ata_54_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,55,horizontal_tail,1,81.1665532627986,81.1665532627986,26.1,0.0,3.06,2118.447040159044,0.0,248.36965298416374,
+item,55,vertical_tail,1,38.449590853682494,38.449590853682494,26.4,0.0,4.14,1015.0691985372177,0.0,159.18130613424552,
+item,56,ata_56_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,57,tank_dry,1,350.0,350.0,12.9,0.0,1.62,4515.0,0.0,567.0,
+item,57,wing,1,1406.1098927785954,1406.1098927785954,12.6,0.0,1.98,17716.9846490103,0.0,2784.097587701619,
+item,71,burners,1,67.5,67.5,22.8,0.0,2.232,1539.0,0.0,150.66000000000003,
+item,71,propulsive_motors,1,103.5,103.5,12.6,0.0,1.98,1304.1,0.0,204.93,
+item,71,turbines,1,144.0,144.0,22.8,0.0,2.232,3283.2000000000003,0.0,321.408,
+item,73,hv_cables,1,36.0,36.0,15.0,0.0,1.8,540.0,0.0,64.8,
+item,75,ata_75_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,78,ata_78_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,79,ata_79_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+item,80,ata_80_allowance,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,No component equation selected yet.
+total,,crew_payload,,,90.718474,,,,,,,
+total,,passenger_payload,,,453.59237,,,,,,,
+total,,payload_total,,,544.310844,,,,,,,
+total,,fuel,,,1200.0,,,,,,,
+total,,tank_dry,,,350.0,,,,,,,
+total,,duality,,,450.0,,,,,,,
+total,,structure_total,,,5312.988310885865,,,,,,,
+total,,systems_total,,,979.6903392862203,,,,,,,
+total,,operating_empty_without_engine,,,6642.678650172085,,,,,,,
+total,,operating_empty,,,7092.678650172085,,,,,,,
+total,,total_aircraft,,,8836.989494172087,,,,,,,
+cg_state,,OEW,,,7092.678650172086,13.30720614441007,0.0,1.8401463111156997,,,,
+cg_state,,ZFW,,,7636.989494172087,13.171273917851678,0.0,1.8501140974392527,,,,
+cg_state,,MTOW,,,8836.989494172087,13.134436859073155,0.0,1.8188662480320295,,,,
+cg_state,,MLW,,,7636.989494172087,13.171273917851678,0.0,1.8501140974392527,,,,

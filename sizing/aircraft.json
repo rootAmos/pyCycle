@@ -53,7 +53,15 @@
     "generator_power_density_W_kg": 8000.0,
     "turbine_power_density_W_kg": 6000.0,
     "generator_efficiency": 0.96,
-    "turbine_mechanical_efficiency": 0.98
+    "turbine_mechanical_efficiency": 0.98,
+    "mass_fractions": {
+      "propulsive_motors": 0.23,
+      "generators": 0.18,
+      "turbines": 0.32,
+      "burners": 0.15,
+      "hv_cables": 0.08,
+      "lv_system": 0.04
+    }
   },
   "fuel": {
     "fuel_density_kg_m3": 422.0
@@ -76,5 +84,49 @@
     "passenger_weight_lb": 200.0,
     "cargo_weight_lb": 0.0,
     "furnishings_weight_lb": 217.6
+  },
+  "weight_methods": {
+    "ata_methods": {},
+    "component_methods": {}
+  },
+  "mass_properties": {
+    "component_locations_m": {
+      "air_conditioning_anti_ice": [16.5, 0.0, 2.34],
+      "air_induction": [19.8, 0.0, 2.232],
+      "avionics": [5.4, 0.0, 2.34],
+      "cargo": [18.0, 0.0, 1.26],
+      "crew": [5.4, 0.0, 1.98],
+      "duality": [22.8, 0.0, 2.232],
+      "electrical": [11.4, 0.0, 1.98],
+      "engine_controls": [12.6, 0.0, 1.98],
+      "engine_cooling": [22.8, 0.0, 2.232],
+      "engine_mounts": [22.2, 0.0, 2.232],
+      "engine_section": [22.8, 0.0, 2.232],
+      "firewall": [21.6, 0.0, 2.232],
+      "flight_controls": [16.5, 0.0, 2.52],
+      "fuel": [12.9, 0.0, 1.62],
+      "fuel_system_and_tanks": [12.9, 0.0, 1.62],
+      "furnishings": [12.0, 0.0, 1.98],
+      "fuselage": [13.8, 0.0, 1.8],
+      "handling_gear": [13.5, 0.0, 0.9],
+      "horizontal_tail": [26.1, 0.0, 3.06],
+      "hydraulics": [14.4, 0.0, 1.62],
+      "instruments": [4.5, 0.0, 2.52],
+      "main_landing_gear": [14.4, 0.0, -0.36],
+      "nose_landing_gear": [3.6, 0.0, -0.36],
+      "oil_cooling": [22.8, 0.0, 2.232],
+      "passengers": [12.6, 0.0, 1.98],
+      "pneumatic_starter": [22.8, 0.0, 2.232],
+      "propulsive_motors": [12.6, 0.0, 1.98],
+      "generators": [22.8, 0.0, 2.232],
+      "turbines": [22.8, 0.0, 2.232],
+      "burners": [22.8, 0.0, 2.232],
+      "hv_cables": [15.0, 0.0, 1.8],
+      "lv_system": [11.4, 0.0, 1.98],
+      "tailpipe": [24.9, 0.0, 2.232],
+      "tank_dry": [12.9, 0.0, 1.62],
+      "vertical_tail": [26.4, 0.0, 4.14],
+      "wing": [12.6, 0.0, 1.98]
+    }
   }
 }

@@ -13,10 +13,10 @@ DEFAULT_AIRCRAFT_JSON = Path(__file__).with_name("aircraft.json")
 
 try:
     from .volume import AircraftVolumeInputs
-    from .weight import WeightInputs
+    from .comp_weights_raymer import WeightInputs
 except ImportError:
     from volume import AircraftVolumeInputs
-    from weight import WeightInputs
+    from comp_weights_raymer import WeightInputs
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,7 @@ class PropulsionSystem:
     turbine_power_density_W_kg: object = 6000.0
     generator_efficiency: object = 0.96
     turbine_mechanical_efficiency: object = 0.98
+    mass_fractions: object = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,9 @@ class Aircraft:
     landing_mass_kg: object
     systems: Systems = field(default_factory=Systems)
     interiors: Interiors = field(default_factory=Interiors)
+    ata_methods: object = field(default_factory=dict)
+    component_methods: object = field(default_factory=dict)
+    component_locations_m: object = field(default_factory=dict)
 
     @property
     def geometry(self):
@@ -159,7 +163,14 @@ class Aircraft:
             furnishings_weight_lb=i.furnishings_weight_lb,
             fuel_weight_lb=f.mass_kg / u.lbm,
             tank_dry_weight_lb=f.tank_dry_mass_kg / u.lbm,
-            custom_propulsion_weight_lb=p.mass_kg / u.lbm,
+            duality_weight_lb=p.mass_kg / u.lbm,
+            propulsion_items_kg={
+                name: p.mass_kg * fraction
+                for name, fraction in p.mass_fractions.items()
+            },
+            ata_methods=self.ata_methods,
+            component_methods=self.component_methods,
+            component_locations_m=self.component_locations_m,
         )
 
     def to_volume_inputs(self):
@@ -190,6 +201,9 @@ class Aircraft:
         systems = data.get("systems", {})
         interiors = data.get("interiors", {})
         aircraft = data.get("aircraft", {})
+        ata_methods = data.get("weight_methods", {}).get("ata_methods", {})
+        component_methods = data.get("weight_methods", {}).get("component_methods", {})
+        component_locations_m = data.get("mass_properties", {}).get("component_locations_m", {})
         landing_mass_fraction = aircraft.get("landing_mass_fraction", 0.85)
         fuel_density_kg_m3 = fuel["fuel_density_kg_m3"]
         propulsion["mass_kg"] = propulsion_mass_kg
@@ -208,6 +222,9 @@ class Aircraft:
             payload=Payload(**payload),
             systems=Systems(**systems),
             interiors=Interiors(**interiors),
+            ata_methods=ata_methods,
+            component_methods=component_methods,
+            component_locations_m=component_locations_m,
         )
 
 
