@@ -38,7 +38,7 @@ pip install -e .
 Generate the Duality cycle station map:
 
 ```powershell
-python propulsion/power_arc/duality.py
+python propulsion/duality.py
 ```
 
 This writes:
@@ -81,7 +81,7 @@ Shared thrust-loading math lives in `sizing/constraint_equations.py`.
 
 ## Repository Layout
 
-- `propulsion/power_arc/duality.py`: Duality pyCycle model and cycle station map
+- `propulsion/duality.py`: Duality pyCycle model and cycle station map
 - `sizing/`: aircraft geometry, volume, mission closure, and constraints
 - `weight/`: aircraft weight models and mass-property helpers
 - `mission/`: mission profiles and coupled AeroSandbox mission examples

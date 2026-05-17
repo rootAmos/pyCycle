@@ -201,11 +201,15 @@ def _set_duality_point_condition(prob, point_name, altitude_ft, mach):
     prob.set_val(f"{point_name}.fc.MN", mach)
 
 
-def _set_duality_power_setting(prob, point_name, mode, shaft_power_fraction):
+def _set_duality_power_setting(prob, point_name, mode, shaft_power_fraction, max_fan_speed_rpm=None):
     if mode not in {"fan", "fan_ab"}:
         return
     speed_scale = max(float(shaft_power_fraction), 0.02) ** (1.0 / 3.0)
-    base_speeds = {"OD_mode1": (5135.0, 4847.0), "OD_mode2": (6000.0, 6000.0)}[point_name]
+    base_speeds = (
+        (float(max_fan_speed_rpm), float(max_fan_speed_rpm))
+        if max_fan_speed_rpm is not None
+        else {"OD_mode1": (5135.0, 4847.0), "OD_mode2": (6000.0, 6000.0)}[point_name]
+    )
     prob.set_val(f"{point_name}.N_fan1", base_speeds[0] * speed_scale, units="rpm")
     prob.set_val(f"{point_name}.N_fan2", base_speeds[1] * speed_scale, units="rpm")
 
@@ -310,6 +314,7 @@ def write_pycycle_engine_deck(
     mach_values=None,
     power_settings=(1.0,),
     max_cases=None,
+    max_fan_speed_rpm=None,
     drag_points_by_condition=None,
     sizing_required_thrust_N=None,
     operating_points=None,
@@ -318,7 +323,7 @@ def write_pycycle_engine_deck(
 
     os.environ.setdefault("OPENMDAO_REPORTS", "0")
     import openmdao.api as om
-    from propulsion.power_arc import duality
+    from propulsion import duality
 
     output_csv = Path(output_csv)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +377,13 @@ def write_pycycle_engine_deck(
                 _set_duality_initial_values(prob, duality, d3)
             _set_duality_point_condition(prob, point_name, altitude_ft, mach)
             for shaft_power_fraction in (power_settings if mode in {"fan", "fan_ab"} else (1.0,)):
-                _set_duality_power_setting(prob, point_name, mode, shaft_power_fraction)
+                _set_duality_power_setting(
+                    prob,
+                    point_name,
+                    mode,
+                    shaft_power_fraction,
+                    max_fan_speed_rpm=max_fan_speed_rpm,
+                )
                 try:
                     prob.run_model()
                 except Exception as error:
