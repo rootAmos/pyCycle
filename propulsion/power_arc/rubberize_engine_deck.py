@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.duality_engine_deck import (
+from propulsion.power_arc.duality_engine_deck import (
     preview_pycycle_engine_deck_setup,
     pycycle_engine_deck_conditions_from_operating_points,
     write_pycycle_engine_deck,
