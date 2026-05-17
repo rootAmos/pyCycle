@@ -76,10 +76,9 @@ class MissionClosureConfig:
     segment_durations_s: tuple[object, object, object, object] = (
         20.0 * 60.0,
         35.0 * 60.0,
-        3000.0 * u.nautical_mile / (2860.0 * u.knot),
+        3000.0 * u.naut_mile / (2860.0 * u.knot),
         20.0 * 60.0,
     )
-    run_tank_model: bool = False
 
 
 def default_5_point_mission():
@@ -305,20 +304,6 @@ def size_tank_for_fuel(fuel_mass_kg, config):
         usable_volume_m3 / max(reference_volume_m3, 1e-9)
     ) ** (2.0 / 3.0)
 
-    if config.run_tank_model:
-        from coupled_mission.tank_deck import TankCase, run_tank_case
-
-        result = run_tank_case(
-            TankCase(
-                propellant=config.propellant,
-                duration_h=sum(config.segment_durations_s) / 3600.0,
-                radius_m=radius_m,
-                length_m=length_m,
-                m_dot_liq_out_kg_s=fuel_mass_kg / sum(config.segment_durations_s),
-            )
-        )
-        tank_dry_mass_kg = result.tank_dry_mass_kg
-
     return {
         "radius_m": radius_m,
         "length_m": length_m,
@@ -455,7 +440,6 @@ def main():
         propulsion_mass_kg=450.0,
         propulsion_volume_m3=3.0,
         payload_volume_m3=5.0,
-        run_tank_model=True,
     )
     result = close_mission_sizing(config=config)
     sizing = result["sizing"]

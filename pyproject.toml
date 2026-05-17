@@ -19,7 +19,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = [
     "aero*",
-    "coupled_mission*",
     "mission*",
     "propulsion*",
     "sizing*",

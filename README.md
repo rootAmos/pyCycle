@@ -82,8 +82,10 @@ Shared thrust-loading math lives in `sizing/constraint_equations.py`.
 ## Repository Layout
 
 - `propulsion/power_arc/duality.py`: Duality pyCycle model and cycle station map
-- `sizing/`: aircraft geometry, weight, volume, mission closure, and constraints
-- `coupled_mission/`: mission and deck utilities for coupled studies
+- `sizing/`: aircraft geometry, volume, mission closure, and constraints
+- `weight/`: aircraft weight models and mass-property helpers
+- `mission/`: mission profiles and coupled AeroSandbox mission examples
+- `tank/`: LNG tank models and property helpers
 - `scripts/`: command-line helpers for mission and deck generation
 
 ## Notes
