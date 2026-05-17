@@ -8,15 +8,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from coupled_mission.aerosandbox_mission import (
+from scripts.duality_engine_deck import (
     preview_pycycle_engine_deck_setup,
     pycycle_engine_deck_conditions_from_operating_points,
     write_pycycle_engine_deck,
 )
+from aero import engine_deck_drag_point
 from sizing.constraint_diagram import (
     ConstraintDiagramConfig,
     engine_deck_aircraft_sizing,
-    engine_deck_drag_point,
 )
 from sizing.electric_machines import build_duality_powertrain_deck
 from scripts.scaled_turboshaft_deck import (
@@ -27,22 +27,24 @@ from scripts.scaled_turboshaft_deck import (
 )
 
 
-OUTPUT_CSV = Path("data/propulsion/duality_engine_deck.csv")
-POWERTRAIN_OUTPUT_CSV = Path("data/propulsion/duality_powertrain_deck.csv")
-POWERTRAIN_SIZING_SUMMARY_JSON = Path("data/propulsion/duality_powertrain_sizing_summary.json")
-POWERTRAIN_SIZING_SUMMARY_CSV = Path("data/propulsion/duality_powertrain_sizing_summary.csv")
-MOTOR_EFFICIENCY_MAP_CSV = Path("data/propulsion/duality_motor_efficiency_map.csv")
-MOTOR_EFFICIENCY_MAP_PNG = Path("data/propulsion/duality_motor_efficiency_map.png")
+OUTPUT_CSV = Path("propulsion/data/duality_engine_deck.csv")
+POWERTRAIN_OUTPUT_CSV = Path("propulsion/data/duality_powertrain_deck.csv")
+POWERTRAIN_SIZING_SUMMARY_JSON = Path("propulsion/data/duality_powertrain_sizing_summary.json")
+POWERTRAIN_SIZING_SUMMARY_CSV = Path("propulsion/data/duality_powertrain_sizing_summary.csv")
+MOTOR_EFFICIENCY_MAP_CSV = Path("propulsion/data/duality_motor_efficiency_map.csv")
+MOTOR_EFFICIENCY_MAP_PNG = Path("propulsion/data/duality_motor_efficiency_map.png")
 MISSION_REF_JSON = Path("sizing/mission_ref.json")
-CONSTRAINT_ENGINE_DECK_CSV = Path("data/propulsion/example_engine_deck.csv")
-TURBOSHAFT_BASELINE_CSV = Path("data/propulsion/turbine/turboshaft_1120hp.csv")
-TURBOSHAFT_INPUT_CSV = Path("data/propulsion/turbine/turboshaft_1120hp_expanded_100kft.csv")
+CONSTRAINT_ENGINE_DECK_CSV = Path("propulsion/data/example_engine_deck.csv")
+TURBOSHAFT_BASELINE_CSV = Path("propulsion/data/turbine/turboshaft_1120hp.csv")
+TURBOSHAFT_INPUT_CSV = Path("propulsion/data/turbine/turboshaft_1120hp_expanded_100kft.csv")
 TURBOSHAFT_EXPANDED_MAX_ALTITUDE_FT = 100000.0
 SMOKE_TEST_ONLY = False
 SMOKE_MAX_CASES = 18
 INCLUDE_SEGMENT_MIDPOINTS = True
 SIZE_ELECTRIC_MACHINES = True
 SCALE_TURBOSHAFT_TO_GENERATOR_LOAD = True
+SWEEP_ELECTRIC_POWER = True
+ENGINE_POWER_SETTINGS = (0.35, 0.50, 0.70, 0.85, 1.00)
 
 
 def condition_key(altitude_ft, mach):
@@ -203,6 +205,8 @@ def main():
             f"W={aircraft_sizing['takeoff_weight_N'] / 1000.0:.1f} kN, "
             f"T_req,max={aircraft_sizing['sizing_required_thrust_N'] / 1000.0:.1f} kN"
         )
+        for mode, thrust_N in aircraft_sizing["sizing_required_thrust_by_mode_N"].items():
+            print(f"  {mode} T_req={thrust_N / 1000.0:.1f} kN")
         for row in preview["rows"]:
             stall_note = ", stall-limited" if row["is_stall_limited"] else ""
             print(
@@ -218,8 +222,12 @@ def main():
     rows = write_pycycle_engine_deck(
         output_csv=OUTPUT_CSV,
         operating_points=operating_points,
+        power_settings=ENGINE_POWER_SETTINGS if SWEEP_ELECTRIC_POWER else (1.0,),
         drag_points_by_condition=drag_points_by_condition,
-        sizing_required_thrust_N=aircraft_sizing["sizing_required_thrust_N"],
+        sizing_required_thrust_N=aircraft_sizing["sizing_required_thrust_by_mode_N"].get(
+            "ramjet",
+            aircraft_sizing["sizing_required_thrust_N"],
+        ),
     )
     print(f"Wrote {len(rows)} rubberized engine-deck rows to {OUTPUT_CSV.resolve()}")
     if SIZE_ELECTRIC_MACHINES:

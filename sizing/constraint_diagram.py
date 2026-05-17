@@ -20,9 +20,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from data.aero.interpolators import (
-    cla_cla_theory_ratio as airfoil_cla_theory_ratio,
-    leading_edge_suction_factor,
+from aero import (
+    drag_build_up_coefficients,
+    drag_geometry_from_planform_area,
+    engine_deck_drag_point,
+    leading_edge_sonic_mach,
+    swept_wing_oswald_efficiency,
+    swept_wing_tip_le_x_m,
 )
 
 try:
@@ -63,6 +67,9 @@ except ImportError:
     from weight import _weight_breakdown
 
 
+plots_dir = Path("outputs/plots")
+
+
 @dataclass(frozen=True)
 class ConstraintDesignPoint:
     name: str
@@ -96,7 +103,7 @@ class ConstraintDesignPoint:
 @dataclass(frozen=True)
 class ConstraintDiagramConfig:
     aircraft_json: object = DEFAULT_AIRCRAFT_JSON
-    engine_deck_csv: object = "data/propulsion/example_engine_deck.csv"
+    engine_deck_csv: object = "propulsion/data/example_engine_deck.csv"
     kuechemann_tau: object = 0.0446
     void_volume_coefficient: object = 0.05
     thrust_scale: object = 1.0
@@ -116,7 +123,7 @@ class ConstraintDiagramConfig:
     wing_loading_min_N_m2: object = 1000.0
     wing_loading_max_N_m2: object = 20000.0
     wing_loading_points: int = 250
-    save_plot: object = "_constraint_diagram.png"
+    save_plot: object = plots_dir / "_constraint_diagram.png"
     show_plot: bool = False
 
 
@@ -124,7 +131,7 @@ def default_constraint_design_points():
     return (
         ConstraintDesignPoint(
             name="Case 1: constant-altitude/speed cruise",
-            mode="fan_ab",
+            mode="ramjet",
             mach=3.0,
             altitude_m=60000.0 * u.foot,
             case="generic",
@@ -133,8 +140,8 @@ def default_constraint_design_points():
         ConstraintDesignPoint(
             name="Case 2: constant-speed climb",
             mode="fan_ab",
-            mach=3.0,
-            altitude_m=60000.0 * u.foot,
+            mach=2.0,
+            altitude_m=45000.0 * u.foot,
             case="generic",
             climb_rate_m_s=20.0,
             cd0=0.034,
@@ -174,7 +181,7 @@ def default_constraint_design_points():
         ),
         ConstraintDesignPoint(
             name="Case 4c: high-Mach climb acceleration",
-            mode="fan_ab",
+            mode="ramjet",
             mach=3.1,
             case="climb_acceleration",
             initial_mach=2.2,
@@ -238,7 +245,7 @@ def default_constraint_design_points():
             case="takeoff_climb_angle",
             cl_max=1.8,
             speed_ratio=1.2,
-            climb_angle_deg=3.0,
+            climb_angle_deg=1.0,
             cd0=0.040,
         ),
     )
@@ -334,394 +341,6 @@ def design_point_flight_condition(design_point):
     return velocity_m_s, dynamic_pressure_Pa
 
 
-def swept_wing_tip_le_x_m(span_m, root_chord_m, tip_chord_m, sweep_25_rad):
-    """Return tip leading-edge x offset from quarter-chord sweep."""
-    return (
-        0.5 * span_m * np.tan(sweep_25_rad)
-        + 0.25 * (root_chord_m - tip_chord_m)
-    )
-
-
-def drag_geometry_from_planform_area(planform_area_m2, config):
-    """Return sizing geometry needed for parasite and wave drag build-up."""
-    aspect_ratio = 3.0
-    taper_ratio = 0.25
-    root_thickness_to_chord = 0.06
-    span_m = (planform_area_m2 * aspect_ratio) ** 0.5
-    root_chord_m = 2.0 * planform_area_m2 / (span_m * (1.0 + taper_ratio))
-    tip_chord_m = taper_ratio * root_chord_m
-    main_wing_tip_le_x_m = swept_wing_tip_le_x_m(
-        span_m,
-        root_chord_m,
-        tip_chord_m,
-        config.main_wing_quarter_chord_sweep_rad,
-    )
-    leading_edge_sweep_rad = np.arctan(main_wing_tip_le_x_m / (0.5 * span_m))
-    half_chord_sweep_rad = np.arctan(
-        (
-            main_wing_tip_le_x_m
-            + 0.5 * tip_chord_m
-            - 0.5 * root_chord_m
-        )
-        / (0.5 * span_m)
-    )
-    fuselage_length_m = 4.0 * planform_area_m2**0.5
-    fuselage_height_m = 0.12 * fuselage_length_m
-    fuselage_width_m = 0.10 * fuselage_length_m
-    fuselage_radius_a_m = 0.5 * fuselage_width_m
-    fuselage_radius_b_m = 0.5 * fuselage_height_m
-    fuselage_perimeter_m = np.pi * (
-        3.0 * (fuselage_radius_a_m + fuselage_radius_b_m)
-        - (
-            (3.0 * fuselage_radius_a_m + fuselage_radius_b_m)
-            * (fuselage_radius_a_m + 3.0 * fuselage_radius_b_m)
-        )
-        ** 0.5
-    )
-    equivalent_fuselage_diameter_m = (fuselage_height_m * fuselage_width_m) ** 0.5
-    engine_diameter_m = 2.0 * u.foot
-    engine_length_m = config.nacelle_length_to_diameter * engine_diameter_m
-    vtail_area_m2 = 0.26 * planform_area_m2
-
-    return {
-        "reference_area_m2": planform_area_m2,
-        "aspect_ratio": aspect_ratio,
-        "root_thickness_to_chord": root_thickness_to_chord,
-        "tip_chord_m": tip_chord_m,
-        "mean_aerodynamic_chord_m": 2.0
-        / 3.0
-        * root_chord_m
-        * (1.0 + taper_ratio + taper_ratio**2)
-        / (1.0 + taper_ratio),
-        "leading_edge_sweep_rad": leading_edge_sweep_rad,
-        "half_chord_sweep_rad": half_chord_sweep_rad,
-        "wing_wetted_area_m2": 2.0
-        * planform_area_m2
-        * (1.0 + 0.25 * root_thickness_to_chord),
-        "tail_wetted_area_m2": 2.0
-        * vtail_area_m2
-        * (1.0 + 0.25 * root_thickness_to_chord),
-        "tail_mean_chord_m": vtail_area_m2 / (vtail_area_m2 * 1.4) ** 0.5,
-        "fuselage_length_m": fuselage_length_m,
-        "fuselage_wetted_area_m2": fuselage_perimeter_m * fuselage_length_m,
-        "fuselage_fineness_ratio": fuselage_length_m / equivalent_fuselage_diameter_m,
-        "max_cross_section_area_m2": 0.25
-        * np.pi
-        * fuselage_width_m
-        * fuselage_height_m,
-        "nacelle_wetted_area_m2": config_propulsion(config).number_engines
-        * np.pi
-        * engine_diameter_m
-        * engine_length_m,
-        "nacelle_length_m": engine_length_m,
-    }
-
-
-def air_dynamic_viscosity_kg_m_s(temperature_K):
-    """Sutherland-law dynamic viscosity for air."""
-    reference_temperature_K = 273.15
-    reference_viscosity_kg_m_s = 1.716e-5
-    sutherland_temperature_K = 110.4
-    return (
-        reference_viscosity_kg_m_s
-        * (temperature_K / reference_temperature_K) ** 1.5
-        * (reference_temperature_K + sutherland_temperature_K)
-        / (temperature_K + sutherland_temperature_K)
-    )
-
-
-def turbulent_skin_friction_coefficient(reynolds_number, mach):
-    """Raymer-style turbulent flat-plate skin friction coefficient."""
-    reynolds_number = np.maximum(reynolds_number, 1.0e5)
-    return 0.455 / (
-        np.log10(reynolds_number) ** 2.58 * (1.0 + 0.144 * mach**2) ** 0.65
-    )
-
-
-def swept_wing_oswald_efficiency(aspect_ratio, leading_edge_sweep_rad):
-    """Raymer swept-wing Oswald efficiency correlation for Lambda_LE > 30 deg."""
-    return (
-        4.61
-        * (1.0 - 0.045 * aspect_ratio**0.68)
-        * np.cos(leading_edge_sweep_rad) ** 0.15
-        - 3.1
-    )
-
-
-def smoothstep(x):
-    x = np.clip(x, 0.0, 1.0)
-    return x**2.0 * (3.0 - 2.0 * x)
-
-
-def airfoil_theory_lift_curve_slope(config, drag_geometry):
-    """Return theoretical 2D airfoil lift curve slope in 1/rad."""
-    thickness_to_chord = drag_geometry["root_thickness_to_chord"]
-    return (
-        2.0 * np.pi
-        + 4.7
-        * thickness_to_chord
-        * (1.0 + 0.00375 * config.airfoil_trailing_edge_angle_deg)
-    )
-
-
-def subsonic_finite_wing_lift_curve_slope(
-    config,
-    drag_geometry,
-    mach,
-    reynolds_number,
-):
-    """Return 3D subsonic CL_alpha using the airfoil-ratio data and finite-wing relation."""
-    aspect_ratio = drag_geometry["aspect_ratio"]
-    beta = np.sqrt(np.maximum(1.0 - mach**2.0, 1.0e-9))
-    tan_half_te_ang = np.tan(np.radians(0.5 * config.airfoil_trailing_edge_angle_deg))
-    clalpha_theory = airfoil_theory_lift_curve_slope(config, drag_geometry)
-    clalpha_ratio = airfoil_cla_theory_ratio(
-        tan_half_te_ang_deg=tan_half_te_ang,
-        reynolds_number=reynolds_number,
-    )
-    airfoil_kappa = 1.05 * clalpha_ratio * clalpha_theory / (2.0 * np.pi)
-    return (
-        2.0
-        * np.pi
-        * aspect_ratio
-        / (
-            2.0
-            + np.sqrt(
-                aspect_ratio**2.0
-                * beta**2.0
-                / airfoil_kappa**2.0
-                * (
-                    1.0
-                    + np.tan(drag_geometry["half_chord_sweep_rad"]) ** 2.0
-                    / beta**2.0
-                )
-                + 4.0
-            )
-        )
-    )
-
-
-def supersonic_ackeret_lift_curve_slope(mach):
-    """Return Ackeret 2D supersonic lift curve slope in 1/rad."""
-    return 4.0 / np.sqrt(np.maximum(mach**2.0 - 1.0, 1.0e-9))
-
-
-def blended_lift_curve_slope(config, drag_geometry, mach, reynolds_number):
-    """Smoothly blend subsonic finite-wing CL_alpha to Ackeret CL_alpha."""
-    subsonic_clalpha = subsonic_finite_wing_lift_curve_slope(
-        config=config,
-        drag_geometry=drag_geometry,
-        mach=mach,
-        reynolds_number=reynolds_number,
-    )
-    m_start = 1.0
-    m_end = leading_edge_sonic_mach(drag_geometry)
-    m_span = np.maximum(m_end - m_start, 1.0e-6)
-    transonic_target_clalpha = supersonic_ackeret_lift_curve_slope(m_end)
-    supersonic_clalpha = supersonic_ackeret_lift_curve_slope(np.maximum(mach, m_end))
-    blend = smoothstep((mach - m_start) / m_span)
-    transonic_clalpha = (
-        (1.0 - blend) * subsonic_clalpha
-        + blend * transonic_target_clalpha
-    )
-    return np.where(mach < m_end, transonic_clalpha, supersonic_clalpha)
-
-
-def leading_edge_sonic_mach(drag_geometry):
-    """Return Mach where the leading-edge normal component becomes sonic."""
-    return 1.0 / np.maximum(np.cos(drag_geometry["leading_edge_sweep_rad"]), 1.0e-9)
-
-
-def lift_dependent_drag_factor(
-    config,
-    drag_geometry,
-    mach,
-    reynolds_number,
-    lift_coefficient,
-):
-    """Return K from leading-edge suction split between K100 and K0."""
-    subsonic_clalpha = subsonic_finite_wing_lift_curve_slope(
-        config=config,
-        drag_geometry=drag_geometry,
-        mach=mach,
-        reynolds_number=reynolds_number,
-    )
-    m_start = 1.0
-    m_end = leading_edge_sonic_mach(drag_geometry)
-    m_span = np.maximum(m_end - m_start, 1.0e-6)
-    supersonic_clalpha_at_transition = supersonic_ackeret_lift_curve_slope(m_end)
-    supersonic_clalpha = supersonic_ackeret_lift_curve_slope(np.maximum(mach, m_end))
-    design_cl = drag_geometry.get("design_lift_coefficient", 0.3)
-    suction = leading_edge_suction_factor(
-        cl=np.maximum(lift_coefficient, 0.0),
-        cl_design=design_cl,
-    )
-    suction = np.clip(suction, 0.0, 1.0)
-    aspect_ratio = drag_geometry["aspect_ratio"]
-    k100 = 1.0 / (np.pi * aspect_ratio)
-    subsonic_k = suction * k100 + (1.0 - suction) / subsonic_clalpha
-    transition_supersonic_k = (
-        suction * k100 + (1.0 - suction) / supersonic_clalpha_at_transition
-    )
-    supersonic_k = suction * k100 + (1.0 - suction) / supersonic_clalpha
-    blend = smoothstep((mach - m_start) / m_span)
-    transonic_k = (
-        (1.0 - blend) * subsonic_k
-        + blend * transition_supersonic_k
-    )
-    lift_dependent_k = np.where(mach < m_end, transonic_k, supersonic_k)
-    clalpha = blended_lift_curve_slope(
-        config=config,
-        drag_geometry=drag_geometry,
-        mach=mach,
-        reynolds_number=reynolds_number,
-    )
-    return lift_dependent_k, clalpha, suction
-
-
-def supersonic_wave_drag_coefficient(config, drag_geometry, mach):
-    """Return the Ma >= 1.2 wave drag estimate from the supplied paper."""
-    leading_edge_sweep_deg = np.degrees(drag_geometry["leading_edge_sweep_rad"])
-    wave_factor = (
-        1.0
-        - 0.386
-        * np.maximum(mach - config.supersonic_wave_drag_start_mach, 0.0) ** 0.57
-        * (1.0 - np.pi * leading_edge_sweep_deg / 100.0) ** 2.0
-    )
-    return (
-        1.5
-        * np.maximum(wave_factor, 0.0)
-        * 9.0
-        * np.pi
-        / 2.0
-        * (drag_geometry["max_cross_section_area_m2"] / drag_geometry["fuselage_length_m"]) ** 2.0
-        / drag_geometry["reference_area_m2"]
-    )
-
-
-def transonic_wave_drag_coefficient(config, drag_geometry, mach):
-    """Bezier drag-rise estimate between Mcrit and the Ma 1.2 wave-drag model."""
-    mdd = config.drag_divergence_mach
-    mcrit = mdd - config.critical_mach_offset_from_mdd
-    msup = config.supersonic_wave_drag_start_mach
-    cdw_mdd = config.drag_divergence_wave_cd
-    cdw_msup = supersonic_wave_drag_coefficient(config, drag_geometry, msup)
-
-    t = np.clip((mach - mcrit) / (msup - mcrit), 0.0, 1.0)
-    t_mdd = (mdd - mcrit) / (msup - mcrit)
-
-    # Cubic Bezier ordinate. P0 is zero at Mcrit, P2 has the same CDw as P3
-    # so the curve reaches the Ma 1.2 value with a flat tangent as in points B/A.
-    p0 = 0.0
-    p2 = cdw_msup
-    p3 = cdw_msup
-    p1_denominator = 3.0 * (1.0 - t_mdd) ** 2.0 * t_mdd
-    p1_numerator = cdw_mdd - (
-        3.0 * (1.0 - t_mdd) * t_mdd**2.0 * p2 + t_mdd**3.0 * p3
-    )
-    p1 = p1_numerator / p1_denominator
-    wave_cd = (
-        (1.0 - t) ** 3.0 * p0
-        + 3.0 * (1.0 - t) ** 2.0 * t * p1
-        + 3.0 * (1.0 - t) * t**2.0 * p2
-        + t**3.0 * p3
-    )
-    return np.maximum(wave_cd, 0.0)
-
-
-def drag_build_up_coefficients(
-    config,
-    drag_geometry,
-    altitude_m,
-    velocity_m_s,
-    lift_coefficient=None,
-):
-    """Return condition-dependent CD0 and lift-dependent K."""
-    atmosphere = asb.Atmosphere(altitude=altitude_m)
-    density_kg_m3 = atmosphere.density()
-    speed_of_sound_m_s = atmosphere.speed_of_sound()
-    mach = velocity_m_s / speed_of_sound_m_s
-    viscosity_kg_m_s = air_dynamic_viscosity_kg_m_s(atmosphere.temperature())
-
-    reference_area_m2 = drag_geometry["reference_area_m2"]
-    wing_re = density_kg_m3 * velocity_m_s * drag_geometry["mean_aerodynamic_chord_m"] / viscosity_kg_m_s
-    tail_re = density_kg_m3 * velocity_m_s * drag_geometry["tail_mean_chord_m"] / viscosity_kg_m_s
-    fuselage_re = density_kg_m3 * velocity_m_s * drag_geometry["fuselage_length_m"] / viscosity_kg_m_s
-    nacelle_re = density_kg_m3 * velocity_m_s * drag_geometry["nacelle_length_m"] / viscosity_kg_m_s
-
-    wing_cd0 = (
-        turbulent_skin_friction_coefficient(wing_re, mach)
-        * config.wing_form_factor
-        * drag_geometry["wing_wetted_area_m2"]
-        / reference_area_m2
-    )
-    tail_cd0 = (
-        turbulent_skin_friction_coefficient(tail_re, mach)
-        * config.tail_form_factor
-        * drag_geometry["tail_wetted_area_m2"]
-        / reference_area_m2
-    )
-    fuselage_form_factor = (
-        1.0
-        + 60.0 / drag_geometry["fuselage_fineness_ratio"] ** 3.0
-        + drag_geometry["fuselage_fineness_ratio"] / 400.0
-    )
-    fuselage_cd0 = (
-        turbulent_skin_friction_coefficient(fuselage_re, mach)
-        * fuselage_form_factor
-        * drag_geometry["fuselage_wetted_area_m2"]
-        / reference_area_m2
-    )
-    nacelle_cd0 = (
-        turbulent_skin_friction_coefficient(nacelle_re, mach)
-        * config.nacelle_form_factor
-        * drag_geometry["nacelle_wetted_area_m2"]
-        / reference_area_m2
-    )
-    parasite_cd0 = wing_cd0 + tail_cd0 + fuselage_cd0 + nacelle_cd0
-
-    transonic_wave_cd0 = transonic_wave_drag_coefficient(
-        config,
-        drag_geometry,
-        mach,
-    )
-    supersonic_wave_cd0 = supersonic_wave_drag_coefficient(config, drag_geometry, mach)
-    wave_cd0 = np.where(
-        mach < config.drag_divergence_mach - config.critical_mach_offset_from_mdd,
-        0.0,
-        np.where(
-            mach < config.supersonic_wave_drag_start_mach,
-            transonic_wave_cd0,
-            supersonic_wave_cd0,
-        ),
-    )
-
-    if lift_coefficient is None:
-        lift_coefficient = drag_geometry.get("design_lift_coefficient", 0.3)
-    lift_dependent_k, lift_curve_slope, leading_edge_suction = lift_dependent_drag_factor(
-        config=config,
-        drag_geometry=drag_geometry,
-        mach=mach,
-        reynolds_number=wing_re,
-        lift_coefficient=lift_coefficient,
-    )
-    oswald_efficiency = swept_wing_oswald_efficiency(
-        drag_geometry["aspect_ratio"],
-        drag_geometry["leading_edge_sweep_rad"],
-    )
-
-    return {
-        "mach": mach,
-        "parasite_cd0": parasite_cd0,
-        "wave_cd0": wave_cd0,
-        "zero_lift_drag_coefficient": parasite_cd0 + wave_cd0,
-        "oswald_efficiency": oswald_efficiency,
-        "lift_curve_slope": lift_curve_slope,
-        "leading_edge_suction": leading_edge_suction,
-        "lift_dependent_k": lift_dependent_k,
-    }
-
-
 def propulsion_sizing_velocity_m_s(design_point):
     """Return representative velocity for converting thrust into propulsive power."""
     if (
@@ -760,6 +379,18 @@ def propulsion_sizing_mach(design_point):
     ):
         return 0.5 * (design_point.initial_mach + design_point.final_mach)
     return design_point.mach
+
+
+def constraint_group(design_point):
+    """Separate field constraints from in-flight propulsion mode constraints."""
+    if design_point.case in {
+        "takeoff_ground_roll_ideal",
+        "takeoff_ground_roll",
+        "takeoff_climb_angle",
+        "braking_roll",
+    }:
+        return "field"
+    return design_point.mode
 
 
 def required_tw_for_design_point(
@@ -1098,6 +729,7 @@ def propulsion_system_sizing_breakdown(
         sizing_cases.append(
             {
                 "name": design_point.name,
+                "mode": design_point.mode,
                 "mach": sizing_mach,
                 "required_thrust_to_weight": required_thrust_to_weight,
                 "required_thrust_N": required_thrust_N,
@@ -1113,6 +745,13 @@ def propulsion_system_sizing_breakdown(
         )
 
     governing_case = max(sizing_cases, key=lambda item: item["propulsive_power_W"])
+    governing_by_mode = {
+        mode: max(
+            (case for case in sizing_cases if case["mode"] == mode),
+            key=lambda item: item["propulsive_power_W"],
+        )
+        for mode in sorted({case["mode"] for case in sizing_cases})
+    }
     propulsive_power_W = governing_case["propulsive_power_W"]
     motor_power_each_W = propulsive_power_W / propulsion.number_propulsive_motors
     generator_electric_power_W = propulsive_power_W / propulsion.generator_efficiency
@@ -1138,6 +777,8 @@ def propulsion_system_sizing_breakdown(
     total_mass_kg = motor_controller_mass_kg + generator_mass_kg + turbine_mass_kg
     return {
         "governing_case": governing_case["name"],
+        "governing_mode": governing_case["mode"],
+        "governing_by_mode": governing_by_mode,
         "propulsive_power_W": propulsive_power_W,
         "motor_power_each_W": motor_power_each_W,
         "generator_power_each_W": generator_power_each_W,
@@ -1244,6 +885,7 @@ def _solve_coupled_weight_volume_once(
     solved_drag_geometry = drag_geometry_from_planform_area(
         solved_planform_area_m2,
         config,
+        config_propulsion(config).number_engines,
     )
     design_cruise_atmosphere = asb.Atmosphere(altitude=config.design_cruise_altitude_m)
     design_cruise_velocity_m_s = (
@@ -1369,6 +1011,32 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
             "margin_at_coupled_wing_loading": available_tw - required_at_coupled_wing_loading,
         }
 
+    groups = sorted({constraint_group(point) for point in design_points if point.include_in_governing})
+    governing_required_tw_by_group = {
+        group: np.max(
+            np.array(
+                [
+                    curves[point.name]["required_thrust_to_weight"]
+                    for point in design_points
+                    if point.include_in_governing and constraint_group(point) == group
+                ]
+            ),
+            axis=0,
+        )
+        for group in groups
+    }
+    required_tw_at_coupled_by_group = {
+        group: np.max(
+            np.array(
+                [
+                    curves[point.name]["required_at_coupled_wing_loading"]
+                    for point in design_points
+                    if point.include_in_governing and constraint_group(point) == group
+                ]
+            )
+        )
+        for group in groups
+    }
     required_stack = np.array(
         [
             curves[design_point.name]["required_thrust_to_weight"]
@@ -1377,19 +1045,29 @@ def build_constraint_diagram(config=ConstraintDiagramConfig(), design_points=Non
         ]
     )
     governing_required_tw = np.max(required_stack, axis=0)
-    coupled["required_thrust_to_weight"] = np.max(
-        np.array(
-            [
-                curves[design_point.name]["required_at_coupled_wing_loading"]
-                for design_point in design_points
-                if design_point.include_in_governing
-            ]
+    coupled["required_thrust_to_weight_by_group"] = required_tw_at_coupled_by_group
+    modes = sorted({point.mode for point in design_points if point.include_in_governing})
+    required_tw_at_coupled_by_mode = {
+        mode: np.max(
+            np.array(
+                [
+                    curves[point.name]["required_at_coupled_wing_loading"]
+                    for point in design_points
+                    if point.include_in_governing and point.mode == mode
+                ]
+            )
         )
+        for mode in modes
+    }
+    coupled["required_thrust_to_weight_by_mode"] = required_tw_at_coupled_by_mode
+    coupled["required_thrust_to_weight"] = np.max(
+        np.array(list(required_tw_at_coupled_by_group.values()))
     )
 
     return {
         "wing_loading_N_m2": wing_loading_N_m2,
         "governing_required_thrust_to_weight": governing_required_tw,
+        "governing_required_thrust_to_weight_by_group": governing_required_tw_by_group,
         "curves": curves,
         "coupled": coupled,
     }
@@ -1405,9 +1083,14 @@ def engine_deck_aircraft_sizing(config=ConstraintDiagramConfig(), design_points=
         for point in design_points
         if point.name == "Case 1: constant-altitude/speed cruise"
     )
-    sizing_thrust_N = (
-        coupled["required_thrust_to_weight"] * coupled["takeoff_weight_N"]
-    )
+    sizing_thrust_by_group_N = {
+        mode: required_tw * coupled["takeoff_weight_N"]
+        for mode, required_tw in coupled["required_thrust_to_weight_by_group"].items()
+    }
+    sizing_thrust_by_mode_N = {
+        mode: required_tw * coupled["takeoff_weight_N"]
+        for mode, required_tw in coupled["required_thrust_to_weight_by_mode"].items()
+    }
     return {
         "constraint_result": result,
         "config": config,
@@ -1421,58 +1104,13 @@ def engine_deck_aircraft_sizing(config=ConstraintDiagramConfig(), design_points=
         "wing_loading_N_m2": coupled["wing_loading_N_m2"],
         "drag_geometry": coupled["drag_geometry"],
         "aircraft": coupled["aircraft"],
-        "sizing_required_thrust_N": sizing_thrust_N,
+        "sizing_required_thrust_N": max(sizing_thrust_by_group_N.values()),
+        "sizing_required_thrust_by_group_N": sizing_thrust_by_group_N,
+        "sizing_required_thrust_by_mode_N": sizing_thrust_by_mode_N,
         "sizing_required_thrust_to_weight": coupled["required_thrust_to_weight"],
+        "sizing_required_thrust_to_weight_by_group": coupled["required_thrust_to_weight_by_group"],
+        "sizing_required_thrust_to_weight_by_mode": coupled["required_thrust_to_weight_by_mode"],
         "propulsion_sizing": coupled["propulsion_sizing"],
-    }
-
-
-def engine_deck_drag_point(aircraft_sizing, mach, altitude_m):
-    """Return atmospheric and drag-derived thrust metrics for one deck condition."""
-    config = aircraft_sizing["config"]
-    atmosphere = asb.Atmosphere(altitude=altitude_m)
-    velocity_m_s = mach * atmosphere.speed_of_sound()
-    dynamic_pressure_Pa = 0.5 * atmosphere.density() * velocity_m_s**2
-    lift_coefficient = (
-        aircraft_sizing["takeoff_weight_N"]
-        / (dynamic_pressure_Pa * aircraft_sizing["planform_area_m2"])
-    )
-    drag = drag_build_up_coefficients(
-        config=config,
-        drag_geometry=aircraft_sizing["drag_geometry"],
-        altitude_m=altitude_m,
-        velocity_m_s=velocity_m_s,
-        lift_coefficient=lift_coefficient,
-    )
-    induced_drag_coefficient = drag["lift_dependent_k"] * lift_coefficient**2.0
-    total_drag_coefficient = (
-        drag["zero_lift_drag_coefficient"] + induced_drag_coefficient
-    )
-    drag_N = (
-        dynamic_pressure_Pa
-        * aircraft_sizing["planform_area_m2"]
-        * total_drag_coefficient
-    )
-    return {
-        "mach": mach,
-        "altitude_m": altitude_m,
-        "temperature_K": atmosphere.temperature(),
-        "pressure_Pa": atmosphere.pressure(),
-        "density_kg_m3": atmosphere.density(),
-        "speed_of_sound_m_s": atmosphere.speed_of_sound(),
-        "velocity_m_s": velocity_m_s,
-        "dynamic_pressure_Pa": dynamic_pressure_Pa,
-        "lift_coefficient": lift_coefficient,
-        "zero_lift_drag_coefficient": drag["zero_lift_drag_coefficient"],
-        "parasite_cd0": drag["parasite_cd0"],
-        "wave_cd0": drag["wave_cd0"],
-        "lift_dependent_k": drag["lift_dependent_k"],
-        "induced_drag_coefficient": induced_drag_coefficient,
-        "total_drag_coefficient": total_drag_coefficient,
-        "drag_N": drag_N,
-        "required_thrust_N": drag_N,
-        "required_thrust_to_weight": drag_N / aircraft_sizing["takeoff_weight_N"],
-        "is_stall_limited": lift_coefficient > config.drag_plot_cl_max,
     }
 
 
@@ -1496,66 +1134,74 @@ def plot_constraint_diagram(result, save_plot=None, show_plot=False):
         "Concorde": "tab:purple",
         "SR-71 Blackbird": "tab:brown",
     }
-    fig, ax = plt.subplots(figsize=(10.5, 6.5), constrained_layout=True)
+    panels = (
+        ("Fan mode constraints", ("fan",), "tab:blue"),
+        ("Fan + afterburner mode constraints", ("fan_ab",), "tab:orange"),
+        ("Ramjet mode constraints", ("ramjet",), "tab:red"),
+    )
+    fig, axes = plt.subplots(1, 3, figsize=(16.0, 5.6), sharex=True, sharey=True, constrained_layout=True)
+    for ax, (title, groups, governing_color) in zip(axes, panels):
+        for name, curve in result["curves"].items():
+            design_point = curve["design_point"]
+            if design_point.mode not in groups:
+                continue
+            ax.plot(
+                wing_loading_lb_ft2,
+                curve["required_thrust_to_weight"],
+                linewidth=1.7,
+                label=f"{design_point.name} ({design_point.mode}, M{float(design_point.mach):.2g})",
+            )
 
-    for name, curve in result["curves"].items():
-        ax.plot(
-            wing_loading_lb_ft2,
-            curve["required_thrust_to_weight"],
-            linewidth=1.8,
-            label=f"{name} required",
-        )
-
-    ax.plot(
-        wing_loading_lb_ft2,
-        result["governing_required_thrust_to_weight"],
-        color="black",
-        linewidth=2.4,
-        label="Governing required",
-    )
-    ax.axvline(
-        coupled_wing_loading_lb_ft2,
-        color="black",
-        linestyle=":",
-        linewidth=2.0,
-        label="Coupled weight/volume W/S",
-    )
-    ax.scatter(
-        [coupled_wing_loading_lb_ft2],
-        [result["coupled"]["required_thrust_to_weight"]],
-        color="black",
-        marker="D",
-        zorder=5,
-    )
-    for reference_name, reference_wing_loading_lb_ft2 in reference_wing_loadings_lb_ft2.items():
+        governing_curves = [
+            curve["required_thrust_to_weight"]
+            for curve in result["curves"].values()
+            if curve["design_point"].include_in_governing and curve["design_point"].mode in groups
+        ]
+        if governing_curves:
+            ax.plot(
+                wing_loading_lb_ft2,
+                np.max(np.array(governing_curves), axis=0),
+                color=governing_color,
+                linestyle="--",
+                linewidth=2.4,
+                label="Regime governing",
+            )
         ax.axvline(
-            reference_wing_loading_lb_ft2,
-            color=reference_colors[reference_name],
-            linestyle="--",
-            linewidth=1.2,
-            alpha=0.8,
-            label=f"{reference_name} W/S",
+            coupled_wing_loading_lb_ft2,
+            color="black",
+            linestyle=":",
+            linewidth=1.8,
+            label="Coupled W/S",
         )
-    for reference_name, reference_thrust_to_weight in reference_thrust_to_weights.items():
-        ax.axhline(
-            reference_thrust_to_weight,
-            color=reference_colors[reference_name],
-            linestyle="--",
-            linewidth=1.2,
-            alpha=0.8,
-            label=f"{reference_name} design T/W",
-        )
+        for reference_name, reference_wing_loading_lb_ft2 in reference_wing_loadings_lb_ft2.items():
+            ax.axvline(
+                reference_wing_loading_lb_ft2,
+                color=reference_colors[reference_name],
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.6,
+            )
+        for reference_name, reference_thrust_to_weight in reference_thrust_to_weights.items():
+            ax.axhline(
+                reference_thrust_to_weight,
+                color=reference_colors[reference_name],
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.6,
+            )
+        ax.set_title(title)
+        ax.set_xlabel("Wing loading W/S, lb/ft^2")
+        ax.set_xlim(20.0, 150.0)
+        ax.set_ylim(bottom=0.0)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper left", fontsize=7)
 
-    ax.set_xlabel("Wing loading W/S, lb/ft^2")
-    ax.set_ylabel("Design thrust-to-weight T/W")
-    ax.set_title(" constraint diagram")
-    ax.set_xlim(20.0, 150.0)
-    ax.grid(True, alpha=0.3)
-    ax.set_ylim(bottom=0.0)
-    ax.legend(loc="upper left", fontsize=8, ncols=2)
+    axes[0].set_ylabel("Required installed thrust-to-weight at case condition")
+    fig.suptitle("Constraint Requirements by Propulsion Mode")
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -1568,7 +1214,7 @@ def plot_drag_build_up_vs_mach(
     result,
     config,
     altitude_m=60000.0 * u.foot,
-    save_plot="_drag_vs_mach.png",
+    save_plot=plots_dir / "_drag_vs_mach.png",
     show_plot=False,
 ):
     """Plot the computed drag build-up versus Mach for the coupled geometry."""
@@ -1678,6 +1324,7 @@ def plot_drag_build_up_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -1690,7 +1337,7 @@ def plot_cd0_vs_mach(
     result,
     config,
     altitude_m=60000.0 * u.foot,
-    save_plot="_cd0_vs_mach.png",
+    save_plot=plots_dir / "_cd0_vs_mach.png",
     show_plot=False,
 ):
     """Plot zero-lift drag components versus Mach for the coupled geometry."""
@@ -1758,6 +1405,7 @@ def plot_cd0_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -1770,7 +1418,7 @@ def plot_level_flight_performance_vs_mach(
     result,
     config,
     altitude_m=60000.0 * u.foot,
-    save_plot="_level_flight_performance_vs_mach.png",
+    save_plot=plots_dir / "_level_flight_performance_vs_mach.png",
     show_plot=False,
 ):
     """Plot level-flight lift, drag, and L/D versus Mach for the coupled aircraft."""
@@ -1864,6 +1512,7 @@ def plot_level_flight_performance_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -1876,7 +1525,7 @@ def plot_altitude_sweep_lift_to_drag_vs_mach(
     result,
     config,
     altitude_ft_values=(30000.0, 45000.0, 60000.0, 70000.0, 80000.0),
-    save_plot="_altitude_sweep_lift_to_drag_vs_mach.png",
+    save_plot=plots_dir / "_altitude_sweep_lift_to_drag_vs_mach.png",
     show_plot=False,
 ):
     """Plot level-flight L/D versus Mach for several altitudes."""
@@ -1924,6 +1573,7 @@ def plot_altitude_sweep_lift_to_drag_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -1936,7 +1586,7 @@ def plot_drag_terms_vs_mach(
     result,
     config,
     altitude_m=60000.0 * u.foot,
-    save_plot="_drag_terms_vs_mach.png",
+    save_plot=plots_dir / "_drag_terms_vs_mach.png",
     show_plot=False,
 ):
     """Plot CL, CD0, CDi, and total CD versus Mach for one altitude."""
@@ -2049,6 +1699,7 @@ def plot_drag_terms_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -2061,7 +1712,7 @@ def plot_lift_dependent_k_vs_mach(
     result,
     config,
     altitude_m=60000.0 * u.foot,
-    save_plot="_k_vs_mach.png",
+    save_plot=plots_dir / "_k_vs_mach.png",
     show_plot=False,
 ):
     """Plot the lift-dependent drag factor K versus Mach."""
@@ -2114,6 +1765,7 @@ def plot_lift_dependent_k_vs_mach(
 
     if save_plot is not None:
         save_plot = Path(save_plot)
+        save_plot.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_plot, dpi=180)
     if show_plot:
         plt.show()
@@ -2125,14 +1777,14 @@ def plot_lift_dependent_k_vs_mach(
 def main():
     # Edit run options here.
     config = ConstraintDiagramConfig(
-        engine_deck_csv="data/propulsion/example_engine_deck.csv",
+        engine_deck_csv="propulsion/data/example_engine_deck.csv",
         thrust_scale=1.0,
-        save_plot="_constraint_diagram.png",
+        save_plot=plots_dir / "_constraint_diagram.png",
         show_plot=False,
     )
     result = build_constraint_diagram(config)
     plot_constraint_diagram(result, save_plot=config.save_plot, show_plot=config.show_plot)
-    drag_plot = "_drag_vs_mach.png"
+    drag_plot = plots_dir / "_drag_vs_mach.png"
     plot_drag_build_up_vs_mach(
         result,
         config,
@@ -2140,7 +1792,7 @@ def main():
         save_plot=drag_plot,
         show_plot=config.show_plot,
     )
-    cd0_plot = "_cd0_vs_mach.png"
+    cd0_plot = plots_dir / "_cd0_vs_mach.png"
     plot_cd0_vs_mach(
         result,
         config,
@@ -2148,7 +1800,7 @@ def main():
         save_plot=cd0_plot,
         show_plot=config.show_plot,
     )
-    performance_plot = "_level_flight_performance_vs_mach.png"
+    performance_plot = plots_dir / "_level_flight_performance_vs_mach.png"
     plot_level_flight_performance_vs_mach(
         result,
         config,
@@ -2156,14 +1808,14 @@ def main():
         save_plot=performance_plot,
         show_plot=config.show_plot,
     )
-    altitude_sweep_plot = "_altitude_sweep_lift_to_drag_vs_mach.png"
+    altitude_sweep_plot = plots_dir / "_altitude_sweep_lift_to_drag_vs_mach.png"
     plot_altitude_sweep_lift_to_drag_vs_mach(
         result,
         config,
         save_plot=altitude_sweep_plot,
         show_plot=config.show_plot,
     )
-    drag_terms_plot = "_drag_terms_vs_mach.png"
+    drag_terms_plot = plots_dir / "_drag_terms_vs_mach.png"
     plot_drag_terms_vs_mach(
         result,
         config,
@@ -2171,7 +1823,7 @@ def main():
         save_plot=drag_terms_plot,
         show_plot=config.show_plot,
     )
-    drag_terms_30k_plot = "_drag_terms_vs_mach_30kft.png"
+    drag_terms_30k_plot = plots_dir / "_drag_terms_vs_mach_30kft.png"
     plot_drag_terms_vs_mach(
         result,
         config,
@@ -2179,7 +1831,7 @@ def main():
         save_plot=drag_terms_30k_plot,
         show_plot=config.show_plot,
     )
-    k_plot = "_k_vs_mach.png"
+    k_plot = plots_dir / "_k_vs_mach.png"
     plot_lift_dependent_k_vs_mach(
         result,
         config,
@@ -2187,7 +1839,7 @@ def main():
         save_plot=k_plot,
         show_plot=config.show_plot,
     )
-    k_30k_plot = "_k_vs_mach_30kft.png"
+    k_30k_plot = plots_dir / "_k_vs_mach_30kft.png"
     plot_lift_dependent_k_vs_mach(
         result,
         config,
@@ -2213,9 +1865,16 @@ def main():
     print(f"Leading-edge sweep: {np.degrees(drag_geometry['leading_edge_sweep_rad']):.3f} deg")
     print(f"Oswald efficiency e: {oswald_efficiency:.5f}")
     print(f"Governing required T/W: {coupled['required_thrust_to_weight']:.5f}")
+    for mode, required_tw in coupled["required_thrust_to_weight_by_mode"].items():
+        print(f"  {mode} governing T/W: {required_tw:.5f}")
     propulsion = coupled["propulsion_sizing"]
     print("Propulsion dry sizing:")
-    print(f"  Governing case: {propulsion['governing_case']}")
+    print(f"  Governing case: {propulsion['governing_case']} ({propulsion['governing_mode']})")
+    for mode, case in propulsion["governing_by_mode"].items():
+        print(
+            f"  {mode} electric sizing case: {case['name']}, "
+            f"{case['propulsive_power_W'] / 1e6:.3f} MW"
+        )
     print(f"  Propulsive power: {propulsion['propulsive_power_W'] / 1e6:.3f} MW")
     print(f"  Motor/controller mass: {propulsion['motor_controller_mass_kg']:.3f} kg")
     print(f"  Generator mass: {propulsion['generator_mass_kg']:.3f} kg")

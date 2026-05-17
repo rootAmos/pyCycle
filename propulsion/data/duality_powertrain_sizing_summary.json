@@ -1,6 +1,6 @@
 {
-  "deck_csv": "data\\propulsion\\duality_engine_deck.csv",
-  "output_csv": "data\\propulsion\\duality_powertrain_deck.csv",
+  "deck_csv": "propulsion\\data\\duality_engine_deck.csv",
+  "output_csv": "propulsion\\data\\duality_powertrain_deck.csv",
   "number_duality_engines": 2,
   "motors_per_duality_engine": 2,
   "number_motors": 4,
@@ -38,6 +38,6 @@
   "generator_peak_torque_N_m": 753.7145666251687,
   "generator_peak_efficiency": 0.965,
   "generator_rated_torque_N_m": 1130.571849937753,
-  "motor_efficiency_map_csv": "data\\propulsion\\duality_motor_efficiency_map.csv",
-  "motor_efficiency_map_png": "data\\propulsion\\duality_motor_efficiency_map.png"
+  "motor_efficiency_map_csv": "propulsion\\data\\duality_motor_efficiency_map.csv",
+  "motor_efficiency_map_png": "propulsion\\data\\duality_motor_efficiency_map.png"
 }

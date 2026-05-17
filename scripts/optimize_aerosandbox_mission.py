@@ -27,7 +27,7 @@ def _load_airplane(module_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--airplane-module", help="Path to a Python file that defines `airplane`, like the AeroSandbox tutorial.")
-    parser.add_argument("--engine-deck", default="data/propulsion/example_engine_deck.csv")
+    parser.add_argument("--engine-deck", default="propulsion/data/example_engine_deck.csv")
     parser.add_argument("--tank-deck", default=None)
     args = parser.parse_args()
 

@@ -64,7 +64,7 @@ class MissionWaypoint:
 @dataclass(frozen=True)
 class MissionClosureConfig:
     aircraft_json: object = DEFAULT_AIRCRAFT_JSON
-    engine_deck_csv: object = "data/propulsion/example_engine_deck.csv"
+    engine_deck_csv: object = "propulsion/data/example_engine_deck.csv"
     propellant: str = "LNG"
     kuechemann_tau: object = 0.0446
     reserve_fraction: object = 0.06
@@ -449,7 +449,7 @@ def close_mission_sizing(config=MissionClosureConfig(), waypoints=None):
 def main():
     # Edit run options here.
     config = MissionClosureConfig(
-        engine_deck_csv="data/propulsion/example_engine_deck.csv",
+        engine_deck_csv="propulsion/data/example_engine_deck.csv",
         initial_fuel_mass_kg=1200.0,
         initial_tank_dry_mass_kg=350.0,
         propulsion_mass_kg=450.0,

@@ -12,7 +12,7 @@ from coupled_mission.mission_sizing import MissionNode, evaluate_mission, fuel_b
 
 
 def main():
-    engine = EngineDeck.from_csv("data/propulsion/example_engine_deck.csv")
+    engine = EngineDeck.from_csv("propulsion/data/example_engine_deck.csv")
     nodes = [
         MissionNode(time_s=0.0, mach=0.3, altitude_m=0.0, required_thrust_N=4000.0, throttle=0.8, mode="fan"),
         MissionNode(time_s=600.0, mach=0.8, altitude_m=9000.0, required_thrust_N=3000.0, throttle=0.6, mode="fan_ab"),

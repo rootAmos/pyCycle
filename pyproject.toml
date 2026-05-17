@@ -18,18 +18,25 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = [
+    "aero*",
     "coupled_mission*",
-    "data*",
     "example_cycles*",
+    "mission*",
+    "propulsion*",
     "sizing*",
+    "tank*",
 ]
 
 [tool.setuptools.package-data]
-"data.aero" = [
+"aero.data" = [
     "cla_theory_ratio/*.csv",
+    "cla_theory_ratio/*.tar",
     "leading_edge_suction/*.csv",
+    "leading_edge_suction/*.tar",
 ]
-"data.propulsion" = [
+"propulsion.data" = [
     "*.csv",
+    "*.json",
+    "*.png",
     "turbine/*.csv",
 ]

@@ -3,6 +3,8 @@
 from pathlib import Path
 import sys
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -14,7 +16,7 @@ from sizing.aero_interpolators import (
 
 
 def scalar(value):
-    return float(value[0])
+    return float(np.ravel(value)[0])
 
 
 def main():

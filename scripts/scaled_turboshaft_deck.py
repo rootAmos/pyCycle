@@ -76,12 +76,12 @@ COLUMN_NAMES = [
 
 RUN_SCALER = "turboshaft"  # "turboshaft", "rubberized", or "expand_turboshaft"
 USE_CONSTRAINT_DIAGRAM_DESIGN_POINT = False
-CONSTRAINT_ENGINE_DECK_CSV = Path("data/propulsion/example_engine_deck.csv")
+CONSTRAINT_ENGINE_DECK_CSV = Path("propulsion/data/example_engine_deck.csv")
 DESIGN_POINT_NAME = None
 
-TURBOSHAFT_INPUT_CSV = Path("data/propulsion/turbine/turboshaft_1120hp.csv")
-TURBOSHAFT_EXPANDED_CSV = Path("data/propulsion/turbine/turboshaft_1120hp_expanded_100kft.csv")
-TURBOSHAFT_OUTPUT_DIR = Path("data/propulsion/turbine")
+TURBOSHAFT_INPUT_CSV = Path("propulsion/data/turbine/turboshaft_1120hp.csv")
+TURBOSHAFT_EXPANDED_CSV = Path("propulsion/data/turbine/turboshaft_1120hp_expanded_100kft.csv")
+TURBOSHAFT_OUTPUT_DIR = Path("propulsion/data/turbine")
 TURBOSHAFT_OUTPUT_STEM = "scaled_turboshaft_deck"
 TURBOSHAFT_TARGET_MCP_KW = 1500.0
 TURBOSHAFT_TARGET_MCP_HP = None
@@ -91,8 +91,8 @@ TURBOSHAFT_MCP_THROTTLE = 50.0
 TURBOSHAFT_EXPANDED_MAX_ALTITUDE_FT = 100000.0
 TURBOSHAFT_EXPANDED_ALTITUDE_STEP_FT = 5000.0
 
-RUBBERIZED_INPUT_CSV = Path("data/propulsion/duality_engine_deck.csv")
-RUBBERIZED_OUTPUT_CSV = Path("data/propulsion/scaled_duality_engine_deck.csv")
+RUBBERIZED_INPUT_CSV = Path("propulsion/data/duality_engine_deck.csv")
+RUBBERIZED_OUTPUT_CSV = Path("propulsion/data/scaled_duality_engine_deck.csv")
 RUBBERIZED_TARGET_MCP_KW = 1500.0
 RUBBERIZED_DESIGN_MACH = 0.35
 RUBBERIZED_DESIGN_ALTITUDE_FT = 15000.0
@@ -685,7 +685,7 @@ def _interpolate_rubberized_column(
 
 
 def rubberized_design_point_from_constraint_diagram(
-    engine_deck_csv: Union[str, Path] = "data/propulsion/example_engine_deck.csv",
+    engine_deck_csv: Union[str, Path] = "propulsion/data/example_engine_deck.csv",
     design_point_name: Optional[str] = None,
 ) -> Dict[str, float | str]:
     """

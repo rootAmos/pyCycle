@@ -1,6 +1,6 @@
 """Compatibility imports for aero data interpolators."""
 
-from data.aero.interpolators import (
+from aero.data.interpolators import (
     StructuredAeroInterpolator2D,
     cla_cla_theory_ratio,
     leading_edge_suction_factor,
