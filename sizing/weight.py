@@ -242,6 +242,8 @@ def pneumatic_starter_weight_lb(x: WeightInputs):
 
 # Source: Raymer, Aircraft Design: A Conceptual Approach, Eq. 15.16.
 def fuel_system_and_tanks_weight_lb(x: WeightInputs):
+    if x.total_fuel_volume_gal <= 0.0:
+        return 0.0
     return (
         7.45
         * x.total_fuel_volume_gal**0.47
@@ -563,13 +565,22 @@ def write_aircraft_weight_breakdown_csv(aircraft, output_csv):
 
 def main():
     # Edit run options here.
-    output_csv = Path("data/sizing/weight_breakdown.csv")
+    output_csv = Path("outputs/weights/weight_breakdown.csv")
+    example_takeoff_mass_kg = 4000.0
+    example_fuel_mass_kg = 1200.0
+    example_tank_dry_mass_kg = 350.0
+    example_propulsion_mass_kg = 450.0
     try:
         from .aircraft import Aircraft
     except ImportError:
         from aircraft import Aircraft
 
-    aircraft = Aircraft.from_json()
+    aircraft = Aircraft.from_json(
+        mass_kg=example_takeoff_mass_kg,
+        fuel_mass_kg=example_fuel_mass_kg,
+        tank_dry_mass_kg=example_tank_dry_mass_kg,
+        propulsion_mass_kg=example_propulsion_mass_kg,
+    )
     inputs = aircraft.to_weight_inputs()
     breakdown = _weight_breakdown(inputs)
     write_weight_breakdown_csv(inputs, output_csv)
