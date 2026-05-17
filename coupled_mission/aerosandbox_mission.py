@@ -507,7 +507,7 @@ def _scalar(prob, name, units=None):
 
 
 def _set_duality_initial_values(prob, duality, d3):
-    """Apply the same converged-start values used by example_cycles.duality."""
+    """Apply the same converged-start values used by propulsion.power_arc.duality."""
     c = duality.CRUISE_CONDITIONS
     prob.set_val("DESIGN_mode2.fc.alt", c["mode2"]["alt_ft"], units="ft")
     prob.set_val("DESIGN_mode2.fc.MN", c["mode2"]["mach"])
@@ -1056,7 +1056,7 @@ def write_pycycle_engine_deck(
 
     os.environ.setdefault("OPENMDAO_REPORTS", "0")
     import openmdao.api as om
-    from example_cycles import duality
+    from propulsion.power_arc import duality
 
     output_csv = Path(output_csv)
     output_csv.parent.mkdir(parents=True, exist_ok=True)

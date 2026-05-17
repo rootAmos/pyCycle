@@ -1,4 +1,4 @@
-"""Plot the reference mission profile from sizing/mission_ref.json."""
+"""Plot the reference mission profile from mission/data/mission_ref.json."""
 
 from argparse import ArgumentParser
 import json
@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MISSION_REF = REPO_ROOT / "sizing" / "mission_ref.json"
+DEFAULT_MISSION_REF = REPO_ROOT / "mission" / "data" / "mission_ref.json"
 
 
 def load_mission(path):
@@ -103,7 +103,7 @@ def parse_args():
     parser.add_argument(
         "--output",
         "-o",
-        default=REPO_ROOT / "sizing" / "mission_ref_profile.png",
+        default=REPO_ROOT / "mission" / "data" / "mission_ref_profile.png",
         type=Path,
         help="Path for the output plot image. Use --no-save to skip writing a file.",
     )

@@ -2,7 +2,7 @@
 
 This package is the boundary between:
 
-- pyCycle engine models in `example_cycles/duality.py`
+- pyCycle engine models in `propulsion/power_arc/duality.py`
 - the sibling HyTank checkout at `../HyTank`
 - AeroSandbox aircraft sizing and mission optimization
 
@@ -60,14 +60,14 @@ Run it after installing AeroSandbox:
 
 ```powershell
 pip install aerosandbox
-python scripts\optimize_aerosandbox_mission.py
+python coupled_mission\aerosandbox_mission.py
 ```
 
 With an AeroSandbox aircraft file that defines `airplane`, following the
 tutorial notebook's `from cessna152 import airplane` pattern:
 
 ```powershell
-python scripts\optimize_aerosandbox_mission.py --airplane-module path\to\aircraft.py
+python coupled_mission\aerosandbox_mission.py
 ```
 
 The current engine model is a differentiable mode-wise scaling of the CSV deck.

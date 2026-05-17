@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -33,7 +33,7 @@ POWERTRAIN_SIZING_SUMMARY_JSON = Path("propulsion/data/duality_powertrain_sizing
 POWERTRAIN_SIZING_SUMMARY_CSV = Path("propulsion/data/duality_powertrain_sizing_summary.csv")
 MOTOR_EFFICIENCY_MAP_CSV = Path("propulsion/data/duality_motor_efficiency_map.csv")
 MOTOR_EFFICIENCY_MAP_PNG = Path("propulsion/data/duality_motor_efficiency_map.png")
-MISSION_REF_JSON = Path("sizing/mission_ref.json")
+MISSION_REF_JSON = Path("mission/data/mission_ref.json")
 CONSTRAINT_ENGINE_DECK_CSV = Path("propulsion/data/example_engine_deck.csv")
 TURBOSHAFT_BASELINE_CSV = Path("propulsion/data/turbine/turboshaft_1120hp.csv")
 TURBOSHAFT_INPUT_CSV = Path("propulsion/data/turbine/turboshaft_1120hp_expanded_100kft.csv")

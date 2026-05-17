@@ -9,7 +9,7 @@ import aerosandbox.numpy as np
 import aerosandbox.tools.units as u
 
 
-DEFAULT_AIRCRAFT_JSON = Path(__file__).with_name("aircraft.json")
+DEFAULT_AIRCRAFT_JSON = Path(__file__).with_name("data") / "aircraft.json"
 
 try:
     from .volume import AircraftVolumeInputs

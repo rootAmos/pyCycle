@@ -12,8 +12,8 @@
 - Do not add command-line interfaces or `argparse` to new Python scripts unless explicitly requested.
 - Prefer editable module-level run settings near the top of scripts for paths, grids, modes, and output filenames, but name them in regular `snake_case`, not all caps.
 - Avoid module-level state wherever practical. Use local variables, function arguments, return values, dataclass fields, object attributes, or small explicit context objects.
-- Do not hard-code aircraft attributes in scripts or helper modules. Use values already defined in `sizing/aircraft.json`.
-- If a new aircraft attribute is needed, add it to `sizing/aircraft.json`, thread it through the aircraft dataclasses/adapters, and read it from the aircraft or propulsion object where needed.
+- Do not hard-code aircraft attributes in scripts or helper modules. Use values already defined in `sizing/data/aircraft.json`.
+- If a new aircraft attribute is needed, add it to `sizing/data/aircraft.json`, thread it through the aircraft dataclasses/adapters, and read it from the aircraft or propulsion object where needed.
 - Do not hard-code aircraft architecture counts such as number of engines, propulsive motors, generators, turbines, motors per engine, or generators per motor in scripts. Store those as aircraft/propulsion object attributes and pass the aircraft or propulsion object into helpers.
 - Keep scripts directly runnable with `python path/to/script.py`.
 - If a script needs reusable behavior, expose functions and keep `main()` as a thin call using the local run settings.
